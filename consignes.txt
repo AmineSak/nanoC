@@ -1,0 +1,16 @@
+functions
+
+// example.call
+
+f1(x){
+    f1(x)    -> Could be recursive
+    return(E)
+}
+
+main(x,y){
+    x = f1(x);
+    ..
+    .
+    .
+    return(z)
+}
