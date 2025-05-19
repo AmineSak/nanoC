@@ -1,5 +1,6 @@
 from lark import Lark
-from typage import type_expression, type_commande
+
+from typage import type_commande, type_expression
 
 env = {}
 cpt = 0
@@ -27,13 +28,13 @@ commande: TYPE IDENTIFIER "=" expression ";" -> declaration
     | "skip" ";"                            -> skip
     | commande ";" commande                 -> sequence
 
-program: "main" "(" liste_var ")" "{" (commande)* "return" "(" expression ")" ";" "}"
+program: function* TYPE "main" "(" liste_var ")" "{" (commande)* "return" "(" expression ")" ";" "}"
 function:  -> vide
-| typed_var "(" liste_var ")" "{" commande "return" "(" expression ")" "}"
+| typed_var "(" liste_var ")" "{" commande "return" "(" expression ")" "}" -> function
 %import common.WS
 %ignore WS
 """,
-    start="function",
+    start="program",
 )
 
 
@@ -66,10 +67,10 @@ mov rbx, rax
 pop rax
 {op2asm[e_op.value]}"""
 
-    
+
 def asm_commande(c):
     global cpt
-    #print(c)
+    # print(c)
     if c.data == "declaration":
         var_type = c.children[0].value
         var_name = c.children[1].value
@@ -124,8 +125,8 @@ end{idx}: nop
 def asm_program(p):
     for c in p.children[0].children:
         env[c.children[1].value] = c.children[0].value
-    #print(env)
-    for i in range(1,len(p.children)-1):
+    # print(env)
+    for i in range(1, len(p.children) - 1):
         type_commande(p.children[i], env)
     ret_type = type_expression(p.children[-1], env)
     if ret_type != "int":
@@ -156,18 +157,20 @@ mov [{c.children[1].value}], rax
     prog_asm = prog_asm.replace("COMMANDE", asm_c)
     return prog_asm
 
+
 def pp_list_typed_vars(l):
     typed_var = l.children[0]
     type = typed_var.children[0].value
     var = typed_var.children[1].value
     L = f"{type} {var}"
 
-    for i in range(1,len(l.children)):
+    for i in range(1, len(l.children)):
         typed_var = l.children[i]
         type = typed_var.children[0].value
         var = typed_var.children[1].value
         L += f",{type} {var}"
-    return(L)
+    return L
+
 
 def pp_expression(e):
     if e.data in ("var", "number"):
@@ -201,6 +204,30 @@ def pp_commande(c):
         tail = c.children[1]
         return f"{pp_commande(d)} ; {pp_commande(tail)}"
 
+
+def pp_program(c):
+    # Handle functions before main
+    functions = ""
+    i = 0
+    while i < len(c.children) and c.children[i].data == "function":
+        functions += pp_function(c.children[i]) + "\n"
+        i += 1
+
+    # Get main function components
+    main_type = c.children[i].value
+    main_params = pp_list_typed_vars(c.children[i + 1])
+    main_body = pp_commande(c.children[i + 2])
+    main_return = pp_expression(c.children[i + 3])
+
+    # Format main function with proper indentation
+    main_func = f"{main_type} main ({main_params}) {{\n    {main_body}\n    return({main_return})\n}}"
+
+    # Combine functions and main
+    if functions:
+        return f"{functions}{main_func}"
+    return main_func
+
+
 def pp_function(f):
     output_type = f.children[0].children[0].value
     name = f.children[0].children[1].value
@@ -209,18 +236,25 @@ def pp_function(f):
     exp = pp_expression(f.children[3])
     return f"{output_type} {name} ({list_typed_vars}) {{{body} \n return({exp})}} "
 
+
 if __name__ == "__main__":
     with open("simple.c") as f:
         src = f.read()
     # ast = g.parse("""int hello_1(int X, long Y) { x=y
-                #   return(x+y)}""")
-    ast = g.parse("""int foo(int x, int y) {
-                  x = y;
-                  return(0)}
-""")
+    #   return(x+y)}""")
+    ast = g.parse(
+        """int foo(int x, int y) {
+    x = y;
+    return(0)
+}
+int main(int x, int y) {
+    x = y;
+    return(x)
+}"""
+    )
     # print(pp_commande(ast))
-    #print(ast)
-    print(pp_function(ast))
+    # print(ast)
+    print(pp_program(ast))
     # print(pp_commande(ast))
 # print(ast.children)
 # print(ast.children[0].type)
