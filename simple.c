@@ -1,6 +1,5 @@
-main(y,x){
-    while(x){
-    x = 1
-    }
-    return(x)
+main(char* y,int x){
+    x = 10;
+    x = x + 20;
+    return (x);
 }
