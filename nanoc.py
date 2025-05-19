@@ -148,10 +148,10 @@ mov [{c.children[1].value}], rax
             decl_vars += f"{c.children[1].value}: db 0\n"
     prog_asm = prog_asm.replace("INIT_VARS", init_vars)
     prog_asm = prog_asm.replace("DECL_VARS", decl_vars)
-    for i in range(1, len(p.children) - 1):
+    for i in range(1,len(p.children) - 1):
         asm_c = asm_commande(p.children[i])
         commande += f"{asm_c}\n"
-    prog_asm = prog_asm.replace("COMMANDE", asm_c)
+    prog_asm = prog_asm.replace("COMMANDE", commande)
     return prog_asm
 
 def pp_expression(e):

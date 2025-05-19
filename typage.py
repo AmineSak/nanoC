@@ -17,6 +17,8 @@ def type_expression(e, env):
             return "int"
         if e.type == "STRING":
             return "char*"
+        if e.type == "LONG":
+            return "long"
         raise TypeError(f"Token non reconnu : {e.type}")
 
     if isinstance(e, Tree):
@@ -32,9 +34,9 @@ def type_expression(e, env):
         if e.data == "opbin":
             left_type = type_expression(e.children[0], env)
             right_type = type_expression(e.children[2], env)
-            if left_type != "int" or right_type != "int":
-                raise TypeError("Les opérateurs binaires ne sont définis que pour des entiers.")
-            return "int"
+            if left_type != right_type:
+                raise TypeError(f"Opération {e.children[1].value} entre types incompatibles : {left_type} et {right_type}.")
+            return left_type
         raise TypeError(f"Expression non reconnue : {e.data}")
 
 def type_commande(c, env):

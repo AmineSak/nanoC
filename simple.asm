@@ -20,13 +20,16 @@ call atoi
 mov [x], rax
 
 
+mov rax, 2
+mov [x], rax
 mov rax, [x] 
 push rax
-mov rax, 20
+mov rax, 1
 mov rbx, rax
 pop rax
-add rax, rbx
+sub rax, rbx
 mov [x], rax
+
 
 mov rax, [x]
 mov rdi, fmt_int

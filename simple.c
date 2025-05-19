@@ -1,5 +1,7 @@
 main(char* y,int x){
-    x = 10;
-    x = x + 20;
+    int z = 0;
+    z = z + y;
+    x = 2;
+    x = x-1;
     return (x);
 }
