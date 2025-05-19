@@ -28,10 +28,12 @@ commande: TYPE IDENTIFIER "=" expression ";" -> declaration
     | commande ";" commande                 -> sequence
 
 program: "main" "(" liste_var ")" "{" (commande)* "return" "(" expression ")" ";" "}"
+function:  -> vide
+| typed_var "(" liste_var ")" "{" commande "return" "(" expression ")" "}"
 %import common.WS
 %ignore WS
 """,
-    start="liste_typed_vars",
+    start="function",
 )
 
 
@@ -154,6 +156,18 @@ mov [{c.children[1].value}], rax
     prog_asm = prog_asm.replace("COMMANDE", asm_c)
     return prog_asm
 
+def pp_list_typed_vars(l):
+    typed_var = l.children[0]
+    type = typed_var.children[0].value
+    var = typed_var.children[1].value
+    L = f"{type} {var}"
+
+    for i in range(1,len(l.children)):
+        typed_var = l.children[i]
+        type = typed_var.children[0].value
+        var = typed_var.children[1].value
+        L += f",{type} {var}"
+    return(L)
 
 def pp_expression(e):
     if e.data in ("var", "number"):
@@ -188,22 +202,25 @@ def pp_commande(c):
         return f"{pp_commande(d)} ; {pp_commande(tail)}"
 
 def pp_function(f):
-    output_type = f.children[0].value
-    name = f.children[1].value
-    list_typed_vars = pp_list_typed_vars(f.children[2])
-    body = pp_commande(f.children[3])
-    exp = pp_expression(f.children[4])
-    return f""
+    output_type = f.children[0].children[0].value
+    name = f.children[0].children[1].value
+    list_typed_vars = pp_list_typed_vars(f.children[1])
+    body = pp_commande(f.children[2])
+    exp = pp_expression(f.children[3])
+    return f"{output_type} {name} ({list_typed_vars}) {{{body} \n return({exp})}} "
 
 if __name__ == "__main__":
     with open("simple.c") as f:
         src = f.read()
     # ast = g.parse("""int hello_1(int X, long Y) { x=y
                 #   return(x+y)}""")
-    ast = g.parse("int x, long y, char* s")
+    ast = g.parse("""int foo(int x, int y) {
+                  x = y;
+                  return(0)}
+""")
     # print(pp_commande(ast))
     #print(ast)
-    print(asm_program(ast))
+    print(pp_function(ast))
     # print(pp_commande(ast))
 # print(ast.children)
 # print(ast.children[0].type)
