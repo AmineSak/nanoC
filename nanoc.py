@@ -34,7 +34,7 @@ function:  -> vide
 %import common.WS
 %ignore WS
 """,
-    start="program",
+    start="function",
 )
 
 
@@ -203,30 +203,15 @@ def pp_commande(c):
         d = c.children[0]
         tail = c.children[1]
         return f"{pp_commande(d)} ; {pp_commande(tail)}"
+    if c.data == "ite":
+        condition = c.children[0]
+        then_body = c.children[1]
+        if len(c.children) > 2:
+            else_body = c.children[2]
+            return f"if ({pp_expression(condition)}) {{{pp_commande(then_body)}}} else {{{pp_commande(else_body)}}}"
+        return f"if ({pp_expression(condition)}) {{{pp_commande(then_body)}}}"
 
-
-def pp_program(c):
-    # Handle functions before main
-    functions = ""
-    i = 0
-    while i < len(c.children) and c.children[i].data == "function":
-        functions += pp_function(c.children[i]) + "\n"
-        i += 1
-
-    # Get main function components
-    main_type = c.children[i].value
-    main_params = pp_list_typed_vars(c.children[i + 1])
-    main_body = pp_commande(c.children[i + 2])
-    main_return = pp_expression(c.children[i + 3])
-
-    # Format main function with proper indentation
-    main_func = f"{main_type} main ({main_params}) {{\n    {main_body}\n    return({main_return})\n}}"
-
-    # Combine functions and main
-    if functions:
-        return f"{functions}{main_func}"
-    return main_func
-
+    
 
 def pp_function(f):
     output_type = f.children[0].children[0].value
@@ -244,18 +229,9 @@ if __name__ == "__main__":
     #   return(x+y)}""")
     ast = g.parse(
         """int foo(int x, int y) {
-    x = y;
-    return(0)
+    int z = x + y;
+    return(z)
 }
-int main(int x, int y) {
-    x = y;
-    return(x)
-}"""
+"""
     )
-    # print(pp_commande(ast))
-    # print(ast)
-    print(pp_program(ast))
-    # print(pp_commande(ast))
-# print(ast.children)
-# print(ast.children[0].type)
-# print(ast.children[0].value)
+    print(pp_function(ast))

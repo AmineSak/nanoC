@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "lldb",
+      "request": "launch",
+      "args": [],
+      "cwd": "/Users/sakouhi/Documents/advanced_compilation",
+      "program": "/Users/sakouhi/Documents/advanced_compilation/build/Debug/outDebug"
+    }
+  ]
+}
