@@ -1,4 +1,4 @@
-extern printf
+extern printf, atoi
 
 section .data
     x: dq 0

@@ -1,23 +1,33 @@
 from lark import Lark
+from typage import type_expression, type_commande
 
+env = {}
 cpt = 0
 g = Lark(
     """
 IDENTIFIER: /[a-zA-Z_][a-zA-Z0-9]*/
-NUMBER: /[1-9][0-9]*/|"0" 
-OPBIN: /[+\-*\/>]/
+NUMBER: /[1-9][0-9]*/ | "0"
+OPBIN: "+" | "-" | "*" | "/" | ">"
+TYPE: "int" | "char*"
+
+typed_var: TYPE IDENTIFIER -> typed_var
+
 liste_var:                            -> vide
-    | IDENTIFIER ("," IDENTIFIER)*    -> vars
-expression: IDENTIFIER            -> var
-    | expression OPBIN expression -> opbin
-    | NUMBER                      -> number
-commande: commande (";" commande)*   -> sequence
-    | "while" "(" expression ")" "{" commande "}" -> while
-    | IDENTIFIER "=" expression              -> affectation
-|"if" "(" expression ")" "{" commande "}" ("else" "{" commande "}")? -> ite
-| "printf" "(" expression ")"                -> print
-| "skip"                                  -> skip
-program:"main" "(" liste_var ")" "{"commande"return" "("expression")" "}"
+    | typed_var ("," typed_var)*      -> vars
+
+expression: IDENTIFIER                -> var
+    | NUMBER                          -> number
+    | expression OPBIN expression     -> opbin
+
+commande: TYPE IDENTIFIER "=" expression ";" -> declaration
+    | IDENTIFIER "=" expression ";"         -> affectation
+    | "while" "(" expression ")" "{" (commande)* "}" -> while
+    | "if" "(" expression ")" "{" (commande)* "}" ("else" "{" (commande)* "}")? -> ite
+    | "printf" "(" expression ")" ";"       -> print
+    | "skip" ";"                            -> skip
+    | commande ";" commande                 -> sequence
+
+program: "main" "(" liste_var ")" "{" (commande)* "return" "(" expression ")" ";" "}"
 %import common.WS
 %ignore WS
 """,
@@ -41,31 +51,53 @@ def asm_expression(e):
         return f"mov rax, [{e.children[0].value}]"
     if e.data == "number":
         return f"mov rax, {e.children[0].value}"
-    e_left = e.children[0]
-    e_op = e.children[1]
-    e_right = e.children[2]
-    asm_left = asm_expression(e_left)
-    asm_right = asm_expression(e_right)
-    return f"""{asm_left} 
+    if e.data == "opbin":
+        e_left = e.children[0]
+        e_op = e.children[1]
+        e_right = e.children[2]
+        asm_left = asm_expression(e_left)
+        asm_right = asm_expression(e_right)
+        return f"""{asm_left} 
 push rax
 {asm_right}
 mov rbx, rax
 pop rax
 {op2asm[e_op.value]}"""
 
-
+    
 def asm_commande(c):
     global cpt
+    #print(c)
+    if c.data == "declaration":
+        var_type = c.children[0].value
+        var_name = c.children[1].value
+        exp = c.children[2]
+        env[var_name] = var_type
+        if var_type == "int":
+            return f"{asm_expression(exp)}\nmov [{var_name}], rax"
+        elif var_type == "char*":
+            return f"{asm_expression(exp)}\nmov [{var_name}], rax"
     if c.data == "affectation":
         var = c.children[0]
         exp = c.children[1]
+        if var.value not in env:
+            raise TypeError(f"Variable '{var.value}' non déclarée.")
         return f"{asm_expression(exp)}\nmov [{var.value}], rax"
     if c.data == "skip":
         return "nop"
     if c.data == "print":
-        return f"""{asm_expression(c.children[0])}
+        exp_type = type_expression(c.children[0], {})
+        if exp_type == "int":
+            return f"""{asm_expression(c.children[0])}
 mov rsi, fmt
 mov rdi, rax
+xor rax, rax
+call printf
+"""
+        elif exp_type == "char*":
+            return f"""{asm_expression(c.children[0])}
+mov rsi, rax
+mov rdi, fmt_str
 xor rax, rax
 call printf
 """
@@ -88,25 +120,39 @@ end{idx}: nop
 
 
 def asm_program(p):
+    for c in p.children[0].children:
+        env[c.children[1].value] = c.children[0].value
+    #print(env)
+    for i in range(1,len(p.children)-1):
+        type_commande(p.children[i], env)
+    ret_type = type_expression(p.children[-1], env)
+    if ret_type != "int":
+        raise TypeError("Le type de retour de la fonction main doit être un entier.")
+
     with open("moule.asm") as f:
         prog_asm = f.read()
-    ret = asm_expression(p.children[2])
+    ret = asm_expression(p.children[-1])
     prog_asm = prog_asm.replace("RETOUR", ret)
     init_vars = ""
     decl_vars = ""
+    commande = ""
     for i, c in enumerate(p.children[0].children):
-        init_vars += f"""mov rbx, [argv]
+        if env[c.children[1].value] == "int":
+            init_vars += f"""mov rbx, [argv]
 mov rdi, [rbx + {(i+1)*8}]
 call atoi
-mov [{c.value}], rax
+mov [{c.children[1].value}], rax
 """
-        decl_vars += f"{c.value}: dq 0\n"
+            decl_vars += f"{c.children[1].value}: dq 0\n"
+        elif env[c.children[1].value] == "char*":
+            decl_vars += f"{c.children[1].value}: db 0\n"
     prog_asm = prog_asm.replace("INIT_VARS", init_vars)
     prog_asm = prog_asm.replace("DECL_VARS", decl_vars)
-    asm_c = asm_commande(p.children[1])
+    for i in range(1, len(p.children) - 1):
+        asm_c = asm_commande(p.children[i])
+        commande += f"{asm_c}\n"
     prog_asm = prog_asm.replace("COMMANDE", asm_c)
     return prog_asm
-
 
 def pp_expression(e):
     if e.data in ("var", "number"):
@@ -118,6 +164,11 @@ def pp_expression(e):
 
 
 def pp_commande(c):
+    if c.data == "declaration":
+        var_type = c.children[0].value
+        var_name = c.children[1].value
+        exp = c.children[2]
+        return f"{var_type} {var_name} = {pp_expression(exp)}"
     if c.data == "affectation":
         var = c.children[0]
         exp = c.children[1]
@@ -141,6 +192,7 @@ if __name__ == "__main__":
         src = f.read()
     ast = g.parse(src)
     # print(pp_commande(ast))
+    #print(ast)
     print(asm_program(ast))
     # print(pp_commande(ast))
 # print(ast.children)
