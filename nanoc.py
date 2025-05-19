@@ -3,9 +3,11 @@ from lark import Lark
 cpt = 0
 g = Lark(
     """
-IDENTIFIER: /[a-zA-Z_][a-zA-Z0-9]*/
+IDENTIFIER: /[a-zA-Z_][a-zA-Z0-9_]*/
 NUMBER: /[1-9][0-9]*/|"0" 
 OPBIN: /[+\-*\/>]/
+liste_typed_vars: 
+    | type IDENTIFIER ("," type IDENTIFIER)*      -> t_vars
 liste_var:                            -> vide
     | IDENTIFIER ("," IDENTIFIER)*    -> vars
 expression: IDENTIFIER            -> var
@@ -18,10 +20,12 @@ commande: commande (";" commande)*   -> sequence
 | "printf" "(" expression ")"                -> print
 | "skip"                                  -> skip
 program:"main" "(" liste_var ")" "{"commande"return" "("expression")" "}"
+type: "int" | "long" | "char*" 
+function: type IDENTIFIER "(" liste_typed_vars ")" "{" commande "return" "(" expression ")" "}"
 %import common.WS
 %ignore WS
 """,
-    start="program",
+    start="liste_typed_vars",
 )
 
 
@@ -107,6 +111,11 @@ mov [{c.value}], rax
     prog_asm = prog_asm.replace("COMMANDE", asm_c)
     return prog_asm
 
+def pp_list_typed_vars(l):
+    L = f"{l.children[0]}"
+    # for i in range(1,len(l.children)):
+        # L += f" ,{l.children[i].value}"
+        
 
 def pp_expression(e):
     if e.data in ("var", "number"):
@@ -135,13 +144,23 @@ def pp_commande(c):
         tail = c.children[1]
         return f"{pp_commande(d)} ; {pp_commande(tail)}"
 
+def pp_function(f):
+    output_type = f.children[0].value
+    name = f.children[1].value
+    list_typed_vars = pp_list_typed_vars(f.children[2])
+    body = pp_commande(f.children[3])
+    exp = pp_expression(f.children[4])
+    return f""
 
 if __name__ == "__main__":
     with open("simple.c") as f:
         src = f.read()
-    ast = g.parse(src)
+    # ast = g.parse("""int hello_1(int X, long Y) { x=y
+                #   return(x+y)}""")
+    ast = g.parse("int x, long y, char* s")
     # print(pp_commande(ast))
-    print(asm_program(ast))
+    # pp_list_typed_vars(ast)
+    print(pp_list_typed_vars(ast))
     # print(pp_commande(ast))
 # print(ast.children)
 # print(ast.children[0].type)
