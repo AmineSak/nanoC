@@ -3,6 +3,7 @@ extern printf, atoi
 section .data
 y: db 0
 x: dq 0
+z: dq 0
 
 argv: dq 0
 fmt_int: db "%d", 10, 0
@@ -18,13 +19,21 @@ mov rbx, [argv]
 mov rdi, [rbx + 16]
 call atoi
 mov [x], rax
+mov rbx, [argv]
+mov rdi, [rbx + 24]
+call atoi
+mov [z], rax
 
 
+mov rax, 0
+mov [z], rax
+mov rax, 1
+mov [z], rax
 mov rax, 2
 mov [x], rax
 mov rax, [x] 
 push rax
-mov rax, 1
+mov rax, [z]
 mov rbx, rax
 pop rax
 sub rax, rbx

@@ -17,8 +17,6 @@ def type_expression(e, env):
             return "int"
         if e.type == "STRING":
             return "char*"
-        if e.type == "LONG":
-            return "long"
         raise TypeError(f"Token non reconnu : {e.type}")
 
     if isinstance(e, Tree):
@@ -55,6 +53,12 @@ def type_commande(c, env):
         if var_type != exp_type:
             raise TypeError(f"Incompatibilité de type pour la déclaration de '{var_name}'.")
         env[var_name] = var_type  # Ajouter la variable à l'environnement
+    elif c.data == "array_declaration":
+        var_type = c.children[0].value
+        var_name = c.children[2].value
+        exp_type = type_expression(c.children[3], env)
+        if var_type != exp_type:
+            raise TypeError(f"Incompatibilité de type pour la déclaration de '{var_name}'.")
     elif c.data == "affectation":
         var_name = c.children[0].value
         exp_type = type_expression(c.children[1], env)

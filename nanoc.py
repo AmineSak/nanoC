@@ -8,7 +8,7 @@ g = Lark(
 IDENTIFIER: /[a-zA-Z_][a-zA-Z0-9]*/
 NUMBER: /[1-9][0-9]*/ | "0"
 OPBIN: "+" | "-" | "*" | "/" | ">"
-TYPE: "int" | "char*"
+TYPE: "int" | "char*" | "void" | "int[]" | "char*[]"
 
 typed_var: TYPE IDENTIFIER -> typed_var
 
@@ -20,6 +20,7 @@ expression: IDENTIFIER                -> var
     | expression OPBIN expression     -> opbin
 
 commande: TYPE IDENTIFIER "=" expression ";" -> declaration
+    | TYPE "[" expression "]" IDENTIFIER "=" "{" NUMBER ("," NUMBER)* "}"";" -> array_declaration
     | IDENTIFIER "=" expression ";"         -> affectation
     | "while" "(" expression ")" "{" (commande)* "}" -> while
     | "if" "(" expression ")" "{" (commande)* "}" ("else" "{" (commande)* "}")? -> ite
@@ -27,7 +28,7 @@ commande: TYPE IDENTIFIER "=" expression ";" -> declaration
     | "skip" ";"                            -> skip
     | commande ";" commande                 -> sequence
 
-program: "main" "(" liste_var ")" "{" (commande)* "return" "(" expression ")" ";" "}"
+program: "main" "(" (liste_var)* ")" "{" (commande)* "return" "(" expression ")" ";" "}"
 %import common.WS
 %ignore WS
 """,
@@ -77,6 +78,18 @@ def asm_commande(c):
             return f"{asm_expression(exp)}\nmov [{var_name}], rax"
         elif var_type == "char*":
             return f"{asm_expression(exp)}\nmov [{var_name}], rax"
+    if c.data == "array_declaration":
+        var_type = c.children[0].value
+        nbr = c.children[1]
+        if var_type == "int":
+            size = 32
+        elif var_type == "char*":
+            size = 8
+        #taille = nbr*size
+        var_name = c.children[2].value
+        env[var_name] = f"{var_type}[]"
+        """
+        suite"""
     if c.data == "affectation":
         var = c.children[0]
         exp = c.children[1]
@@ -122,7 +135,6 @@ end{idx}: nop
 def asm_program(p):
     for c in p.children[0].children:
         env[c.children[1].value] = c.children[0].value
-    #print(env)
     for i in range(1,len(p.children)-1):
         type_commande(p.children[i], env)
     ret_type = type_expression(p.children[-1], env)
@@ -136,21 +148,21 @@ def asm_program(p):
     init_vars = ""
     decl_vars = ""
     commande = ""
-    for i, c in enumerate(p.children[0].children):
-        if env[c.children[1].value] == "int":
-            init_vars += f"""mov rbx, [argv]
-mov rdi, [rbx + {(i+1)*8}]
-call atoi
-mov [{c.children[1].value}], rax
-"""
-            decl_vars += f"{c.children[1].value}: dq 0\n"
-        elif env[c.children[1].value] == "char*":
-            decl_vars += f"{c.children[1].value}: db 0\n"
-    prog_asm = prog_asm.replace("INIT_VARS", init_vars)
-    prog_asm = prog_asm.replace("DECL_VARS", decl_vars)
     for i in range(1,len(p.children) - 1):
         asm_c = asm_commande(p.children[i])
         commande += f"{asm_c}\n"
+    for i, c in enumerate(env.keys()):
+        if env[c] == "int":
+            init_vars += f"""mov rbx, [argv]
+mov rdi, [rbx + {(i+1)*8}]
+call atoi
+mov [{c}], rax
+"""
+            decl_vars += f"{c}: dq 0\n"
+        elif env[c] == "char*":
+            decl_vars += f"{c}: db 0\n"
+    prog_asm = prog_asm.replace("INIT_VARS", init_vars)
+    prog_asm = prog_asm.replace("DECL_VARS", decl_vars)
     prog_asm = prog_asm.replace("COMMANDE", commande)
     return prog_asm
 
@@ -192,7 +204,6 @@ if __name__ == "__main__":
         src = f.read()
     ast = g.parse(src)
     # print(pp_commande(ast))
-    #print(ast)
     print(asm_program(ast))
     # print(pp_commande(ast))
 # print(ast.children)
