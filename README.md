@@ -1,1 +1,2 @@
 # nanoC
+Nous avons contraint l'utilisateur de mettre uniquement des NUMBERs pour la déclaration de taille d'un tableau car dans le cas d'une expression, comme "x + z" par exemple, la valeur réelle est stockée dans le code assembleur et non dans le code python ce qui rend impossible la vérification de la cohérence de taille. 

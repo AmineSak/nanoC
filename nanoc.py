@@ -19,8 +19,8 @@ expression: IDENTIFIER                -> var
     | NUMBER                          -> number
     | expression OPBIN expression     -> opbin
 
-commande: TYPE IDENTIFIER "=" expression ";" -> declaration
-    | TYPE "[" expression "]" IDENTIFIER "=" "{" NUMBER ("," NUMBER)* "}"";" -> array_declaration
+commande: TYPE IDENTIFIER ("=" expression)* ";" -> declaration
+    | TYPE "[" NUMBER "]" IDENTIFIER "=" "{" NUMBER ("," NUMBER)* "}"";" -> array_declaration
     | IDENTIFIER "=" expression ";"         -> affectation
     | "while" "(" expression ")" "{" (commande)* "}" -> while
     | "if" "(" expression ")" "{" (commande)* "}" ("else" "{" (commande)* "}")? -> ite
@@ -34,6 +34,13 @@ program: "main" "(" (liste_var)* ")" "{" (commande)* "return" "(" expression ")"
 """,
     start="program",
 )
+
+"""valeur expression:
+return f""{asm_expression(nbr)}
+mov rbx, {size}
+mul rbx
+""
+"""
 
 
 def get_vars_expression(e):
@@ -65,31 +72,40 @@ mov rbx, rax
 pop rax
 {op2asm[e_op.value]}"""
 
+
+def eval_expression(e, env):
+    return None
     
+
 def asm_commande(c):
     global cpt
-    #print(c)
     if c.data == "declaration":
-        var_type = c.children[0].value
-        var_name = c.children[1].value
-        exp = c.children[2]
-        env[var_name] = var_type
-        if var_type == "int":
-            return f"{asm_expression(exp)}\nmov [{var_name}], rax"
-        elif var_type == "char*":
-            return f"{asm_expression(exp)}\nmov [{var_name}], rax"
+        if len(c.children) == 3:    
+            var_type = c.children[0].value
+            var_name = c.children[1].value
+            exp = c.children[2]
+            env[var_name] = var_type
+            if var_type == "int":
+                return f"{asm_expression(exp)}\nmov [{var_name}], rax"
+            elif var_type == "char*":
+                return f"{asm_expression(exp)}\nmov [{var_name}], rax"
+        elif len(c.children) == 2:
+            var_type = c.children[0].value
+            var_name = c.children[1].value
+            env[var_name] = var_type
     if c.data == "array_declaration":
+        print(c.children)
         var_type = c.children[0].value
-        nbr = c.children[1]
+        nbr = c.children[1].value
         if var_type == "int":
             size = 32
         elif var_type == "char*":
             size = 8
-        #taille = nbr*size
+        taille = nbr * size
         var_name = c.children[2].value
         env[var_name] = f"{var_type}[]"
-        """
-        suite"""
+        type_commande(c, env)
+        #fonction(c, taille)
     if c.data == "affectation":
         var = c.children[0]
         exp = c.children[1]
@@ -140,7 +156,6 @@ def asm_program(p):
     ret_type = type_expression(p.children[-1], env)
     if ret_type != "int":
         raise TypeError("Le type de retour de la fonction main doit être un entier.")
-
     with open("moule.asm") as f:
         prog_asm = f.read()
     ret = asm_expression(p.children[-1])

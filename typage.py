@@ -47,18 +47,26 @@ def type_commande(c, env):
         raise TypeError(f"Commande inattendue : {c.type}")
 
     if c.data == "declaration":
-        var_type = c.children[0].value  # "int" ou "char*"
-        var_name = c.children[1].value
-        exp_type = type_expression(c.children[2], env)
-        if var_type != exp_type:
-            raise TypeError(f"Incompatibilité de type pour la déclaration de '{var_name}'.")
-        env[var_name] = var_type  # Ajouter la variable à l'environnement
+        if len(c.children) == 3:    
+            var_type = c.children[0].value 
+            var_name = c.children[1].value
+            exp_type = type_expression(c.children[2], env)
+            if var_type != exp_type:
+                raise TypeError(f"Incompatibilité de type pour la déclaration de '{var_name}'.")
+            env[var_name] = var_type 
+        elif len(c.children) == 2:
+            var_type = c.children[0].value  
+            var_name = c.children[1].value
+            env[var_name] = var_type
     elif c.data == "array_declaration":
         var_type = c.children[0].value
         var_name = c.children[2].value
-        exp_type = type_expression(c.children[3], env)
-        if var_type != exp_type:
-            raise TypeError(f"Incompatibilité de type pour la déclaration de '{var_name}'.")
+        print(c.children[1].value)
+        for i in range(3, len(c.children)):
+            if c.children[i].type == "NUMBER" and var_type != "int":
+                raise TypeError(f"Incompatibilité de type pour la déclaration de '{var_name}'.")
+        if int(c.children[1].value) != len(c.children) - 3:
+            raise TypeError(f"Le nombre d'éléments pour '{var_name}' ne correspond pas à la taille déclarée.")    
     elif c.data == "affectation":
         var_name = c.children[0].value
         exp_type = type_expression(c.children[1], env)
