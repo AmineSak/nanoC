@@ -15,6 +15,7 @@ mov [argv], rsi
 
 INIT_VARS
 COMMANDE
+FUNCTIONS
 RETOUR
 mov rdi, fmt_int
 mov rsi, rax

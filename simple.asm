@@ -1,20 +1,11 @@
 extern printf, atoi
 
 section .data
-<<<<<<< HEAD
-
-y: dq 0
-x: dq 0
-
-argv: dq 0
-fmt_int:db "%d", 10, 0
-=======
 y: db 0
 x: dq 0
 
 argv: dq 0
 fmt_int: db "%d", 10, 0
->>>>>>> origin/typage
 
 global main
 section .text
