@@ -1,12 +1,8 @@
-int add(int a, int b) {
-    int result = a + b;
-    return(result)
-}
-
-int main() {
-    int x = 5;
-    int y = 3;
-    int z = add(x, y);
-    printf(z);
-    return(0);
+main(char* y,int x){
+    int z = 0;
+    z = 1;
+    x = 2;
+    x = x-z;
+    int[4] t = {1,2,3,4};
+    return (x);
 }

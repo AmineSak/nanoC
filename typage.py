@@ -32,9 +32,9 @@ def type_expression(e, env):
         if e.data == "opbin":
             left_type = type_expression(e.children[0], env)
             right_type = type_expression(e.children[2], env)
-            if left_type != "int" or right_type != "int":
-                raise TypeError("Les opérateurs binaires ne sont définis que pour des entiers.")
-            return "int"
+            if left_type != right_type:
+                raise TypeError(f"Opération {e.children[1].value} entre types incompatibles : {left_type} et {right_type}.")
+            return left_type
         raise TypeError(f"Expression non reconnue : {e.data}")
 
 def type_commande(c, env):
@@ -53,6 +53,12 @@ def type_commande(c, env):
         if var_type != exp_type:
             raise TypeError(f"Incompatibilité de type pour la déclaration de '{var_name}'.")
         env[var_name] = var_type  # Ajouter la variable à l'environnement
+    elif c.data == "array_declaration":
+        var_type = c.children[0].value
+        var_name = c.children[2].value
+        exp_type = type_expression(c.children[3], env)
+        if var_type != exp_type:
+            raise TypeError(f"Incompatibilité de type pour la déclaration de '{var_name}'.")
     elif c.data == "affectation":
         var_name = c.children[0].value
         exp_type = type_expression(c.children[1], env)

@@ -23,6 +23,7 @@ expression: IDENTIFIER                -> var
     | IDENTIFIER "(" (expression ("," expression)*)? ")" -> function_call
 
 commande: TYPE IDENTIFIER "=" expression ";" -> declaration
+    | TYPE "[" expression "]" IDENTIFIER "=" "{" NUMBER ("," NUMBER)* "}"";" -> array_declaration
     | IDENTIFIER "=" expression ";"         -> affectation
     | "while" "(" expression ")" "{" (commande)* "}" -> while
     | "if" "(" expression ")" "{" (commande)* "}" ("else" "{" (commande)* "}")? -> ite
@@ -332,7 +333,7 @@ def asm_program(p):
             init_vars += f"""mov rbx, [argv]
 mov rdi, [rbx + {(i+1)*8}]
 call atoi
-mov [{c.children[1].value}], rax
+mov [{c}], rax
 """
             decl_vars += f"{c.children[1].value}: dq 0\n"
         elif env[c.children[1].value] == "char*":
