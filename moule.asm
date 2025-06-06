@@ -1,4 +1,4 @@
-extern printf, atoi
+extern printf, atoi, malloc
 
 section .data
 DECL_VARS

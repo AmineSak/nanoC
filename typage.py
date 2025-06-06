@@ -29,6 +29,13 @@ def type_expression(e, env):
             return "int"
         if e.data == "string":
             return "char*"
+        if e.data == "array_access":
+            var_name = e.children[0].value
+            if var_name not in env:
+                raise TypeError(f"Variable '{var_name}' non déclarée.")
+            if env[var_name] not in ("int[]", "char*[]"):
+                raise TypeError(f"'{var_name}' n'est pas un tableau.")
+            return env[var_name][0]
         if e.data == "opbin":
             left_type = type_expression(e.children[0], env)
             right_type = type_expression(e.children[2], env)
@@ -61,11 +68,10 @@ def type_commande(c, env):
     elif c.data == "array_declaration":
         var_type = c.children[0].value
         var_name = c.children[2].value
-        print(c.children[1].value)
         for i in range(3, len(c.children)):
-            if c.children[i].type == "NUMBER" and var_type != "int":
+            if c.children[3].children[i].children[0].type == "NUMBER" and var_type != "int":
                 raise TypeError(f"Incompatibilité de type pour la déclaration de '{var_name}'.")
-        if int(c.children[1].value) != len(c.children) - 3:
+        if int(c.children[1].children[0]) != len(c.children[3].children):
             raise TypeError(f"Le nombre d'éléments pour '{var_name}' ne correspond pas à la taille déclarée.")    
     elif c.data == "affectation":
         var_name = c.children[0].value
