@@ -3,7 +3,7 @@ set -euo pipefail
 
 # 1) Generate assembly
 
-python3 tabloop.py
+python3 nanoc.py
 
 # 2) Assemble to object file
 nasm -f elf64 output.asm
