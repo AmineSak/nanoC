@@ -1,8 +1,13 @@
-main(char* y,int x){
-    int z = 0;
-    z = 1;
-    x = 2;
-    x = x-z;
-    int[4] t = {1,2,3,4};
-    return (x);
+
+int fib(int n) {
+    if (n <= 1) { 
+        return(n);
+    }
+    return(fib(n - 1) + fib(n - 2));
+}
+
+int main(int x) {
+    int result = fib(x);
+    printf(result); 
+    return(0);      
 }

@@ -5,11 +5,13 @@ from typage import type_commande, type_expression
 env = {}
 cpt = 0
 func_env = {}  # Store function definitions
+
+
 g = Lark(
     """
 IDENTIFIER: /[a-zA-Z_][a-zA-Z0-9]*/
 NUMBER: /[1-9][0-9]*/ | "0"
-OPBIN: "+" | "-" | "*" | ">"
+OPBIN: "+" | "-" | "*" | ">" | "==" | "!=" | "<" | ">=" | "<="
 TYPE: "int" | "char*"
 
 typed_var: TYPE IDENTIFIER -> typed_var
@@ -25,15 +27,21 @@ expression: IDENTIFIER                -> var
 commande: TYPE IDENTIFIER "=" expression ";" -> declaration
     | TYPE "[" expression "]" IDENTIFIER "=" "{" NUMBER ("," NUMBER)* "}"";" -> array_declaration
     | IDENTIFIER "=" expression ";"         -> affectation
-    | "while" "(" expression ")" "{" (commande)* "}" -> while
-    | "if" "(" expression ")" "{" (commande)* "}" ("else" "{" (commande)* "}")? -> ite
+    | "while" "(" expression ")" "{" block "}" -> while
+    | "if" "(" expression ")" "{" block "}" ("else" "{" block "}")? -> ite
     | "printf" "(" expression ")" ";"       -> print
     | "skip" ";"                            -> skip
     | commande ";" commande                 -> sequence
+    | "return" "(" expression ")" ";"       -> return_statement 
 
-program: function* TYPE "main" "(" liste_var ")" "{" (commande)* "return" "(" expression ")" ";" "}"
-function:  -> vide
-| typed_var "(" liste_var ")" "{" commande "return" "(" expression ")" "}" -> function
+block: (commande)* -> block
+
+main: TYPE "main" "(" liste_var ")" "{" block "}" -> main
+
+function: typed_var "(" liste_var ")" "{" block "}" -> function
+
+program: function* main -> program
+
 %import common.WS
 %ignore WS
 """,
@@ -54,6 +62,11 @@ op2asm = {
     "-": "sub rax, rbx",
     "*": "imul rax, rbx",
     ">": "cmp rax, rbx\nsetg al\nmovzx rax, al",
+    "<": "cmp rax, rbx\nsetl al\nmovzx rax, al",
+    ">=": "cmp rax, rbx\nsetge al\nmovzx rax, al",
+    "<=": "cmp rax, rbx\nsetle al\nmovzx rax, al",
+    "==": "cmp rax, rbx\nsete al\nmovzx rax, al",
+    "!=": "cmp rax, rbx\nsetne al\nmovzx rax, al",
 }
 
 
@@ -65,16 +78,14 @@ def asm_expression(e, local_vars=None, params=None):
 
     if e.data == "var":
         var_name = e.children[0].value
-        # Check if it's a local variable
+        # Parameters are now treated the same as local variables
         if var_name in local_vars:
             offset = local_vars[var_name]
-            return f"mov rax, [rbp+{offset}]"
-        # Check if it's a parameter
-        elif var_name in params:
-            offset = params[var_name]
-            return f"mov rax, [rbp+{offset}]"
-        # Otherwise it's a global variable
+            return f"mov rax, [rbp{offset}]"
+        # The `params` dictionary is no longer needed here.
+        # We can remove the `elif var_name in params:` block entirely.
         else:
+            # Otherwise it's a global variable
             return f"mov rax, [{var_name}]"
 
     if e.data == "number":
@@ -97,26 +108,43 @@ pop rax
         func_name = e.children[0].value
         args = e.children[1:] if len(e.children) > 1 else []
 
-        if func_name not in func_env:
+        # System V AMD64 ABI uses these registers for the first 6 integer/pointer arguments
+        arg_registers = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
+
+        if len(args) > len(arg_registers):
+            raise NotImplementedError("More than 6 arguments are not supported yet.")
+
+        if func_name not in func_env and func_name not in ["printf", "atoi"]:
             raise TypeError(f"Function '{func_name}' not defined.")
 
-        # Push arguments in reverse order (C calling convention)
         asm_code = ""
-        for arg in reversed(args):
-            arg_asm = asm_expression(arg, local_vars, params)
-            asm_code += f"{arg_asm}\npush rax\n"
+        # 1. Evaluate all arguments and push them onto the stack to save them.
+        # We do this to avoid an argument's evaluation clobbering a register
+        # needed for another argument.
+        for arg in args:
+            asm_code += asm_expression(arg, local_vars, params) + "\n"
+            asm_code += "push rax\n"
 
-        # Call the function
+        # 2. Pop the evaluated arguments from the stack into the correct registers.
+        # Note: we pop in reverse order of how they were pushed.
+        for i in range(len(args)):
+            reg = arg_registers[i]
+            asm_code += f"pop {reg}\n"
+
+        # Special handling for printf which needs rax to be 0 for varargs
+        if func_name == "printf":
+            asm_code += "xor rax, rax\n"
+
+        # 3. Call the function
         asm_code += f"call {func_name}\n"
 
-        # Clean up the stack
-        if args:
-            asm_code += f"add rsp, {8 * len(args)}  ; Clean up {len(args)} arguments\n"
+        # 4. No stack cleanup (`add rsp, ...`) is needed because the callee doesn't clean
+        # the registers, and we didn't leave anything on the stack.
 
         return asm_code
 
 
-def asm_commande(c, local_vars=None, params=None):
+def asm_commande(c, local_vars=None, params=None, func_name=None):
     global cpt
 
     if local_vars is None:
@@ -124,7 +152,6 @@ def asm_commande(c, local_vars=None, params=None):
     if params is None:
         params = {}
 
-    # print(c)
     if c.data == "declaration":
         var_type = c.children[0].value
         var_name = c.children[1].value
@@ -133,24 +160,13 @@ def asm_commande(c, local_vars=None, params=None):
         # Add to environment
         env[var_name] = var_type
 
-        # If we're in a function, store as local variable
-        if local_vars is not None:
-            # Calculate offset from rbp (always negative for locals)
-            offset = -(8 + 8 * len(local_vars))  # 8 bytes per variable (64-bit)
-            local_vars[var_name] = offset
+        # FIXED: Always treat main function variables as locals
+        # Calculate offset from rbp (always negative for locals)
+        offset = -(8 + 8 * len(local_vars))
+        local_vars[var_name] = offset
 
-            exp_asm = asm_expression(exp, local_vars, params)
-            return f"{exp_asm}\nmov [rbp{offset}], rax  ; local var {var_name}"
-        else:
-            # Global variable
-            if var_type == "int":
-                return (
-                    f"{asm_expression(exp, local_vars, params)}\nmov [{var_name}], rax"
-                )
-            elif var_type == "char*":
-                return (
-                    f"{asm_expression(exp, local_vars, params)}\nmov [{var_name}], rax"
-                )
+        exp_asm = asm_expression(exp, local_vars, params)
+        return f"{exp_asm}\nmov [rbp{offset}], rax  ; local var {var_name}"
 
     if c.data == "affectation":
         var = c.children[0]
@@ -178,8 +194,8 @@ def asm_commande(c, local_vars=None, params=None):
         exp_type = type_expression(c.children[0], env)
         if exp_type == "int":
             return f"""{asm_expression(c.children[0], local_vars, params)}
-mov rsi, fmt
-mov rdi, rax
+mov rsi, rax
+mov rdi, fmt_int
 xor rax, rax
 call printf
 """
@@ -193,169 +209,209 @@ call printf
 
     if c.data == "while":
         exp = c.children[0]
-        body = c.children[1]
+        block = c.children[1]  # This is now a Tree('block', ...)
+
+        body_asm = ""
+        for cmd in block.children:  # We can now loop through the block's children
+            body_asm += asm_commande(cmd, local_vars, params, func_name) + "\n"
+
         idx = cpt
         cpt += 1
-        return f"""loop{idx}:{asm_expression(exp, local_vars, params)}
-cmp rax, 0
-jz end{idx}
-{asm_commande(body, local_vars, params)}
-jmp loop{idx}
-end{idx}: nop
+        return f"""
+loop{idx}:
+    {asm_expression(exp, local_vars, params)}
+    cmp rax, 0
+    jz end{idx}
+    {body_asm}
+    jmp loop{idx}
+end{idx}:
+    nop
 """
 
     if c.data == "ite":
         condition = c.children[0]
-        then_body = c.children[1]
+        then_block = c.children[1]  # This is the Tree for the 'then' block
         idx = cpt
         cpt += 1
 
+        # Compile the 'then' block
+        then_asm = ""
+        for cmd in then_block.children:
+            then_asm += asm_commande(cmd, local_vars, params, func_name) + "\n"
+
         if len(c.children) > 2:  # There's an else clause
-            else_body = c.children[2]
-            return f"""{asm_expression(condition, local_vars, params)}
-cmp rax, 0
-jz else{idx}
-{asm_commande(then_body, local_vars, params)}
-jmp endif{idx}
+            else_block = c.children[2]  # This is the Tree for the 'else' block
+
+            # Compile the 'else' block
+            else_asm = ""
+            for cmd in else_block.children:
+                else_asm += asm_commande(cmd, local_vars, params, func_name) + "\n"
+
+            return f"""
+    {asm_expression(condition, local_vars, params)}
+    cmp rax, 0
+    jz else{idx}
+{then_asm}
+    jmp endif{idx}
 else{idx}:
-{asm_commande(else_body, local_vars, params)}
-endif{idx}: nop
+{else_asm}
+endif{idx}:
+    nop
 """
-        else:
-            return f"""{asm_expression(condition, local_vars, params)}
-cmp rax, 0
-jz endif{idx}
-{asm_commande(then_body, local_vars, params)}
-endif{idx}: nop
+        else:  # No else clause
+            return f"""
+    {asm_expression(condition, local_vars, params)}
+    cmp rax, 0
+    jz endif{idx}
+{then_asm}
+endif{idx}:
+    nop
 """
 
     if c.data == "sequence":
         d = c.children[0]
         tail = c.children[1]
         return f"{asm_commande(d, local_vars, params)}\n{asm_commande(tail, local_vars, params)}"
+    elif c.data == "return_statement":
+        if func_name is None:
+            raise Exception("Return statement found outside of a function.")
+
+        # 1. Evaluate the expression. The result goes into RAX.
+        exp_asm = asm_expression(c.children[0], local_vars, params)
+
+        # 2. Jump to the function's epilogue.
+        return f"""{exp_asm}
+    jmp {func_name}_epilogue
+"""
 
 
 def asm_function(f):
     global func_env
-
-    # Extract function information
+    # ... (extract func_name, etc. as before) ...
     return_type = f.children[0].children[0].value
     func_name = f.children[0].children[1].value
     params_tree = f.children[1].children if hasattr(f.children[1], "children") else []
-    body = f.children[2]
-    return_exp = f.children[3]
 
-    # Store function in environment
+    # ... (Store in func_env as before) ...
     func_env[func_name] = {"return_type": return_type, "params": []}
 
-    # Create parameter mapping (parameter -> stack position)
-    param_offsets = {}
-    for i, param in enumerate(params_tree):
-        param_type = param.children[0].value
-        param_name = param.children[1].value
+    # These are the registers where the parameters will arrive
+    arg_registers = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
 
-        # Parameters start at [rbp+16] (rbp+8 is return address)
-        offset = 16 + (i * 8)  # 8 bytes per parameter (64-bit)
-        param_offsets[param_name] = offset
-
-        # Add to function environment
-        func_env[func_name]["params"].append((param_type, param_name))
-
-    # Create local variable mapping
+    # We will treat parameters as local variables stored on the stack.
+    # This is different from the old param_offsets.
     local_vars = {}
 
-    # Function prologue
+    # Prologue
     asm_code = f"""
 ; Function: {func_name}
 {func_name}:
     push rbp                ; Save old base pointer
     mov rbp, rsp            ; Set new base pointer
-    sub rsp, 128            ; Reserve stack space for local variables (adjust as needed)
+    sub rsp, 128            ; Reserve stack space for local variables
 """
 
-    # Function body
-    asm_code += asm_commande(body, local_vars, param_offsets)
+    # NEW: Copy parameters from registers to the stack
+    if len(params_tree) > len(arg_registers):
+        raise NotImplementedError("More than 6 arguments are not supported yet.")
 
-    # Return expression
+    for i, param in enumerate(params_tree):
+        param_type = param.children[0].value
+        param_name = param.children[1].value
+        reg = arg_registers[i]
+
+        # Calculate a *local variable* offset for the parameter
+        offset = -(8 + 8 * len(local_vars))
+        local_vars[param_name] = offset
+
+        # Add the instruction to save the register to the stack
+        asm_code += (
+            f"    mov [rbp{offset}], {reg} ; Save parameter '{param_name}' from {reg}\n"
+        )
+        func_env[func_name]["params"].append((param_type, param_name))
+
+    block_node = f.children[2]
+
+    # 2. Loop through the commands INSIDE the block node.
+    for cmd in block_node.children:
+        asm_code += asm_commande(cmd, local_vars, {}, func_name) + "\n"
+
+    # This part is now correct
     asm_code += f"""
-    ; Return value
-    {asm_expression(return_exp, local_vars, param_offsets)}
-    
-    ; Function epilogue
-    mov rsp, rbp            ; Restore stack pointer
-    pop rbp                 ; Restore base pointer
-    ret                     ; Return to caller
+{func_name}_epilogue:
+    mov rsp, rbp
+    pop rbp
+    ret
 """
-
     return asm_code
 
 
 def asm_program(p):
     # Process functions
     functions_asm = ""
+    main_idx = 0
     for i in range(len(p.children)):
         if hasattr(p.children[i], "data") and p.children[i].data == "function":
             functions_asm += asm_function(p.children[i])
-
-    # Find main function node
-    main_idx = -1
-    for i in range(len(p.children)):
-        if isinstance(p.children[i], str) and p.children[i] == "main":
+        if hasattr(p.children[i], "data") and p.children[i].data == "main":
             main_idx = i
             break
 
-    # Process main parameters
-    for c in p.children[main_idx - 1].children:
+    main = p.children[main_idx].children
+
+    # Process main parameters - these become global variables
+    for c in main[1].children:
         env[c.children[1].value] = c.children[0].value
-
-    # Type check commands
-    for i in range(main_idx + 1, len(p.children) - 1):
-        type_commande(p.children[i], env)
-
-    # Check return type
-    ret_type = type_expression(p.children[-1], env)
-    if ret_type != "int":
-        raise TypeError("Le type de retour de la fonction main doit être un entier.")
 
     with open("moule.asm") as f:
         prog_asm = f.read()
 
-    ret = asm_expression(p.children[-1])
-    prog_asm = prog_asm.replace("RETOUR", ret)
-
+    # FIXED: Create local vars for main function too
+    main_local_vars = {}
     init_vars = ""
     decl_vars = ""
     commande = ""
 
     # Process main parameters for init vars and declarations
-    for i, c in enumerate(p.children[main_idx - 1].children):
+    for i, c in enumerate(main[1].children):
         if env[c.children[1].value] == "int":
             init_vars += f"""mov rbx, [argv]
 mov rdi, [rbx + {(i+1)*8}]
 call atoi
-mov [{c}], rax
+mov [{c.children[1].value}], rax
 """
             decl_vars += f"{c.children[1].value}: dq 0\n"
         elif env[c.children[1].value] == "char*":
-            decl_vars += f"{c.children[1].value}: db 0\n"
+            decl_vars += f"{c.children[1].value}: dq 0\n"
 
     # Add function declarations
-    for func_name, func_info in func_env.items():
-        if func_info["return_type"] == "int":
-            decl_vars += f"; Function {func_name} is defined in the text section\n"
+    for func_name, _ in func_env.items():
+        decl_vars += f"; Function {func_name} is defined in the text section\n"
 
-    prog_asm = prog_asm.replace("INIT_VARS", init_vars)
-    prog_asm = prog_asm.replace("DECL_VARS", decl_vars)
+    block_node = main[2]
 
-    # Process main function commands
-    for i in range(main_idx + 1, len(p.children) - 1):
-        asm_c = asm_commande(p.children[i])
+    # 2. Loop through the commands inside the block.
+    for cmd in block_node.children:
+        # Pass the actual command, not the block, to asm_commande
+        asm_c = asm_commande(cmd, main_local_vars, {}, "main")
         commande += f"{asm_c}\n"
 
-    prog_asm = prog_asm.replace("COMMANDE", commande)
+    # This part is now correct
+    commande += """main_epilogue:
+    mov rsp, rbp
+    pop rbp
+    ret
+"""
 
-    # Add functions before _start
-    prog_asm = prog_asm.replace("; FUNCTIONS", functions_asm)
+    # REMOVE the old RETOUR logic.
+    prog_asm = prog_asm.replace("INIT_VARS", init_vars)
+    prog_asm = prog_asm.replace("DECL_VARS", decl_vars)
+    prog_asm = prog_asm.replace("COMMANDE", commande)
+    # The 'RETOUR' placeholder is no longer used, so we can remove its replacement logic.
+    prog_asm = prog_asm.replace(
+        "RETOUR", ""
+    )  # Or just ensure it's not in the template.
+    prog_asm = prog_asm.replace("FUNCTIONS", functions_asm)
 
     return prog_asm
 
