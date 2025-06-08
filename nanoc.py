@@ -32,7 +32,8 @@ commande: TYPE IDENTIFIER "=" expression ";" -> declaration
     | "printf" "(" expression ")" ";"       -> print
     | "skip" ";"                            -> skip
     | commande ";" commande                 -> sequence
-    | "return" "(" expression ")" ";"       -> return_statement 
+    | "return" "(" expression ")" ";"       -> return_statement
+    | IDENTIFIER "[" expression "]" "=" expression             -> arr_affectation
 
 block: (commande)* -> block
 
@@ -206,6 +207,17 @@ mov rdi, fmt_str
 xor rax, rax
 call printf
 """
+
+    if c.data == "arr_affectation":
+        name, idx, val = c.children[0].value, c.children[1], c.children[2]
+        return (
+            f"{asm_expression(idx)}\n"
+            "mov rcx, rax\n"
+            "shl rcx, 3\n"
+            f"mov rdx, [{name}]\n"
+            f"{asm_expression(val)}\n"
+            "mov [rdx + rcx], rax"
+        )
 
     if c.data == "while":
         exp = c.children[0]
@@ -472,6 +484,11 @@ def pp_commande(c):
         d = c.children[0]
         tail = c.children[1]
         return f"{pp_commande(d)} {pp_commande(tail)}"
+    if c.data == "arr_affectation":
+        name = c.children[0].value
+        idx = pp_expression(c.children[1])
+        expr = pp_expression(c.children[2])
+        return f"{name}[{idx}] = {expr}"
     if c.data == "ite":
         condition = c.children[0]
         then_body = c.children[1]
