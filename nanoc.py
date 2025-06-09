@@ -82,12 +82,27 @@ op2asm = {
 }
 
 
+from lark import Tree, Token
+
 def asm_expression(e, local_vars):
     """Compiles an expression. local_vars is the map of local names to [rbp-offset]."""
     global cpt
+
+    if isinstance(e, Token):
+        if e.type == "NUMBER":
+            return f"mov rax, {e.value}"
+        elif e.type == "STRING":
+            label = f"str_{abs(hash(e)) % (10**8)}"
+            return f"lea rax, [{label}] ; {e.value}"
+        elif e.type == "IDENTIFIER":
+            return f"mov rax, [{e.value}]"
+        else:
+            raise NotImplementedError(f"Unsupported token type: {e.type!r}")
+
     if e.data == "number":
         return f"mov rax, {e.children[0].value}"
 
+    
     if e.data == "var":
         var_name = e.children[0].value
         if var_name in local_vars:
@@ -98,120 +113,86 @@ def asm_expression(e, local_vars):
         else:
             raise NameError(f"Variable '{var_name}' not defined.")
 
+    
     if e.data == "arr_access":
         name = e.children[0].value
         idx_expr = e.children[1]
-
-        # Get the base address of the array (it's a pointer)
         if name in local_vars:
-            base_addr_location = f"[rbp{local_vars[name]['off']}]"
+            base_addr = f"[rbp{local_vars[name]['off']}]"
         elif name in env:
-            base_addr_location = f"[{name}]"
+            base_addr = f"[{name}]"
         else:
             raise NameError(f"Array '{name}' not defined.")
-
-        # Calculate index and access memory
         return f"""
     {asm_expression(idx_expr, local_vars)}
-    mov rbx, rax                     ; rbx holds the index
-    mov rax, {base_addr_location}    ; rax holds the base pointer
-    mov rax, [rax + rbx * 8]         ; Access the element (8 bytes for int/pointer)
+    mov rbx, rax
+    mov rax, {base_addr}
+    mov rax, [rax + rbx * 8]
 """
 
     if e.data == "opbin":
-        left_asm = asm_expression(e.children[0], local_vars)
-        right_asm = asm_expression(e.children[2], local_vars)
-        op = e.children[1].value
+        left, op_tok, right = e.children
+        left_asm  = asm_expression(left,  local_vars)
+        right_asm = asm_expression(right, local_vars)
+        asm_op    = op2asm[op_tok.value]
         return f"""
     {right_asm}
     push rax
     {left_asm}
     pop rbx
-    {op2asm[op]}
+    {asm_op}
 """
 
     if e.data == "function_call":
         func_name = e.children[0].value
-        args = e.children[1:]
-        arg_registers = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
-        if len(args) > len(arg_registers):
-            raise NotImplementedError(
-                "Functions with more than 6 arguments are not supported."
-            )
+        args      = e.children[1:]
+        arg_regs  = ["rdi","rsi","rdx","rcx","r8","r9"]
+        if len(args) > len(arg_regs):
+            raise NotImplementedError("Only up to 6 args supported.")
+        asm = ""
 
-        asm_code = ""
         for arg in args:
-            asm_code += asm_expression(arg, local_vars) + "\n"
-            asm_code += "push rax\n"
+            asm += asm_expression(arg, local_vars) + "\npush rax\n"
+       
         for i in range(len(args)):
-            asm_code += f"pop {arg_registers[i]}\n"
-
-        # Special handling for printf
+            asm += f"pop {arg_regs[i]}\n"
         if func_name == "printf":
-            asm_code += "xor rax, rax\n"
+            asm += "xor rax, rax\n"
+        asm += f"call {func_name}\n"
+        return asm
 
-        asm_code += f"call {func_name}\n"
-        return asm_code
-    
-    if isinstance(e, Tree) and e.data in (
-       "string_expression",
-        "string_expr",        
-        "int_expression",
-       "int_expr"
-    ):
-       return asm_expression(e.children[0])
-
-    
-    if isinstance(e, Tree) and e.data == "str_concat":
-        left  = asm_expression(e.children[0])
-        right = asm_expression(e.children[1])
-        return f"""{left}
+    if e.data == "str_concat":
+        left, right = e.children
+        left_asm     = asm_expression(left,  local_vars)
+        right_asm    = asm_expression(right, local_vars)
+        return f"""{left_asm}
 push rax
-{right}
+{right_asm}
 mov rsi, rax
 pop rdi
 call strcat_custom"""
 
-    
-    if isinstance(e, Tree) and e.data == "str_index":
-        var_tok  = e.children[0]
-        idx_tree = e.children[1]
 
-        asm_idx  = asm_expression(idx_tree)
-        asm_base = f"mov rbx, [{var_tok.value}]"
-        return f"""{asm_idx}
+    if e.data == "str_index":
+        var_tok, idx = e.children
+        idx_asm      = asm_expression(idx, local_vars)
+        base_asm     = f"mov rbx, [{var_tok.value}]"
+        return f"""{idx_asm}
 push rax
-{asm_base}
+{base_asm}
 pop rax
 add rax, rbx
 movzx rax, byte [rax]"""
 
-    if isinstance(e, Token):
-        if e.type == "STRING":
-            label = f"str_{abs(hash(e))%(10**8)}"
-            return f"lea rax, [{label}] ; {e.value}"
-        if e.type == "IDENTIFIER":
-            return f"mov rax, [{e.value}]"
-        if e.type == "NUMBER":
-            return f"mov rax, {e.value}"
- 
-    if isinstance(e, Tree) and e.data == "opbin":
-        left  = asm_expression(e.children[0])
-        right = asm_expression(e.children[2])
-        op    = e.children[1].value
-        return f"""{left}
-push rax
-{right}
-mov rbx, rax
-pop rax
-{op2asm[op]}"""
-
-    if isinstance(e, Tree) and e.data in ("strlen", "atoi"):
-        inner = asm_expression(e.children[0])
+    if e.data in ("strlen","atoi"):
+        inner = asm_expression(e.children[0], local_vars)
         call  = "strlen" if e.data=="strlen" else "atoi"
         return f"""{inner}
 mov rdi, rax
 call {call}"""
+
+    #
+    raise NotImplementedError(f"Unhandled expression node: {e!r}")
 
 
 def asm_commande(c, local_vars, func_name):
