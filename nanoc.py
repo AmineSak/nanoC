@@ -1,9 +1,11 @@
-from lark import Lark
+from lark import Lark,Tree,Token
 from typage import type_expression, type_commande
 
 # Global state for the compiler
 env = {}  # Symbol table for global variables and functions
 cpt = 0  # Counter for generating unique labels
+declared_strings = set()
+declared_chars=set()
 
 g = Lark(
     """
@@ -11,6 +13,7 @@ g = Lark(
     NUMBER: /[1-9][0-9]*/ | "0"
     OPBIN: "+" | "-" | "*" | "/" | "==" | "!=" | ">" | "<" | ">=" | "<="
     TYPE: "int" | "char*" | "int[]" | "char*[]"
+    STRING: /"[^\"]*"/
 
     var_decl: TYPE "[" NUMBER? "]" IDENTIFIER -> array_decl_type
             | TYPE IDENTIFIER                  -> simple_decl_type
@@ -25,11 +28,26 @@ g = Lark(
         | NUMBER                          -> number
         | expression OPBIN expression     -> opbin
         | IDENTIFIER "(" (expression ("," expression)*)? ")" -> function_call
+        | string_expr               -> string_expression
+        | int_expr                  -> int_expression
+
+    string_expr: STRING
+                | IDENTIFIER
+                | string_expr "+" string_expr -> str_concat
+
+    int_expr: NUMBER
+            | IDENTIFIER
+            | IDENTIFIER "[" expression "]"  ->str_index
+            | int_expr OPBIN int_expr        -> opbin
+            | "len" "(" string_expr ")"      -> strlen
+            | "atoi" "(" string_expr ")"     -> atoi
 
     commande: "for" "(" TYPE IDENTIFIER "=" expression ";" expression ";" IDENTIFIER "++" ")" "{" block "}" -> forloop
         | TYPE "[" expression "]" IDENTIFIER "=" "{" liste_values "}" ";" -> array_declaration_init
         | TYPE "[" expression "]" IDENTIFIER ";"                         -> array_declaration
         | TYPE IDENTIFIER "=" expression ";"                             -> declaration
+        | "char" "*" IDENTIFIER "=" STRING                               -> string_decl
+        | "char" "*" IDENTIFIER                                          -> string_decl_empty
         | IDENTIFIER "[" expression "]" "=" expression ";"               -> arr_affectation
         | IDENTIFIER "=" expression ";"                                  -> affectation
         | "while" "(" expression ")" "{" block "}"                       -> while
@@ -66,6 +84,7 @@ op2asm = {
 
 def asm_expression(e, local_vars):
     """Compiles an expression. local_vars is the map of local names to [rbp-offset]."""
+    global cpt
     if e.data == "number":
         return f"mov rax, {e.children[0].value}"
 
@@ -133,11 +152,83 @@ def asm_expression(e, local_vars):
 
         asm_code += f"call {func_name}\n"
         return asm_code
+    
+    if isinstance(e, Tree) and e.data in (
+       "string_expression",
+        "string_expr",        
+        "int_expression",
+       "int_expr"
+    ):
+       return asm_expression(e.children[0])
+
+    
+    if isinstance(e, Tree) and e.data == "str_concat":
+        left  = asm_expression(e.children[0])
+        right = asm_expression(e.children[1])
+        return f"""{left}
+push rax
+{right}
+mov rsi, rax
+pop rdi
+call strcat_custom"""
+
+    
+    if isinstance(e, Tree) and e.data == "str_index":
+        var_tok  = e.children[0]
+        idx_tree = e.children[1]
+
+        asm_idx  = asm_expression(idx_tree)
+        asm_base = f"mov rbx, [{var_tok.value}]"
+        return f"""{asm_idx}
+push rax
+{asm_base}
+pop rax
+add rax, rbx
+movzx rax, byte [rax]"""
+
+    if isinstance(e, Token):
+        if e.type == "STRING":
+            label = f"str_{abs(hash(e))%(10**8)}"
+            return f"lea rax, [{label}] ; {e.value}"
+        if e.type == "IDENTIFIER":
+            return f"mov rax, [{e.value}]"
+        if e.type == "NUMBER":
+            return f"mov rax, {e.value}"
+ 
+    if isinstance(e, Tree) and e.data == "opbin":
+        left  = asm_expression(e.children[0])
+        right = asm_expression(e.children[2])
+        op    = e.children[1].value
+        return f"""{left}
+push rax
+{right}
+mov rbx, rax
+pop rax
+{op2asm[op]}"""
+
+    if isinstance(e, Tree) and e.data in ("strlen", "atoi"):
+        inner = asm_expression(e.children[0])
+        call  = "strlen" if e.data=="strlen" else "atoi"
+        return f"""{inner}
+mov rdi, rax
+call {call}"""
 
 
 def asm_commande(c, local_vars, func_name):
     """Compiles a command. Needs local_vars for context and func_name for returns."""
     global cpt
+
+    if c.data == "string_decl":
+        var = c.children[0].value
+        label = f"str_{abs(hash(c.children[1])) % (10 ** 8)}"
+        return f"lea rax, [{label}] \nmov [{var}], rax"
+
+    if c.data == "string_decl_empty":
+        var = c.children[0].value
+        return f"""mov rdi, 1 
+call malloc
+mov byte [rax], 0
+mov [{var}], rax"""
 
     if c.data == "declaration":
         var_type = c.children[0].value
@@ -340,13 +431,47 @@ endif{idx}: nop
 endif{idx}: nop
 """
     if c.data == "print":
-        return f"""
-    {asm_expression(c.children[0], local_vars)}
+        exp = c.children[0]
+        asm = asm_expression(exp)
+
+        
+        raw = exp
+        while isinstance(raw, Tree) and raw.data in (
+            "string_expression", "string_expr",
+            "int_expression",  "int_expr"
+        ):
+            raw = raw.children[0]
+
+        is_char = False
+        if isinstance(raw, Tree) and raw.data == "str_index":
+            is_char = True
+        elif isinstance(raw, Token) \
+             and raw.type == "IDENTIFIER" \
+             and raw.value in declared_chars:
+            is_char = True
+
+        is_str = False
+        if isinstance(raw, Token) and raw.type == "STRING":
+            is_str = True
+        elif isinstance(raw, Tree) and raw.data == "str_concat":
+            is_str = True
+        elif isinstance(raw, Token) \
+             and raw.type == "IDENTIFIER" \
+             and raw.value in declared_strings:
+            is_str = True
+
+        if is_char:
+            fmt = "fmt_char"
+        elif is_str:
+            fmt = "fmt_str"
+        else:
+            fmt = "fmt_int"
+
+        return f"""{asm}
+    mov rdi, {fmt}
     mov rsi, rax
-    mov rdi, fmt_int
     xor rax, rax
-    call printf
-"""
+    call printf"""
     if c.data == "skip":
         return "nop"
     if c.data == "sequence":
@@ -404,6 +529,11 @@ def asm_function(f):
 
 
 def asm_program(p):
+    
+    global cpt
+    cpt = 0
+    declared_strings.clear()
+
     functions_asm = ""
     main_node = None
     for child in p.children:
@@ -411,43 +541,159 @@ def asm_program(p):
             functions_asm += asm_function(child)
         elif child.data == "main":
             main_node = child
-    main_params = main_node.children[1].children
-    main_block = main_node.children[2]
-    decl_vars = ""
+
+    env["main"] = {
+        "type": "function",
+        "params": [],
+        "return_type": main_node.children[0]
+    }
+
+    main_params = main_node.children[1].children  
     init_vars = ""
+    input_vars = []
     for i, param in enumerate(main_params):
-        var_name = param.children[1].value
         var_type = param.children[0].value
-        env[var_name] = {"type": var_type}  #{"type": "global_var"}
-        decl_vars += f"{var_name}: dq 0\n"
-        init_vars += f"""
-    mov rdi, [argv_ptr]
-    mov rdi, [rdi + {(i+1)*8}]
+        var_name = param.children[1].value
+        env[var_name] = {"type": var_type}
+        input_vars.append(var_name)
+
+
+        offset = (i+1)*8
+        if var_type.lower() == "string":
+            init_vars += f"""\
+    mov rbx, [argv_ptr]
+    mov rdi, [rbx + {offset}]
+    mov [{var_name}], rdi
+
+"""
+        else:
+            init_vars += f"""\
+    mov rbx, [argv_ptr]
+    mov rdi, [rbx + {offset}]
     call atoi
     mov [{var_name}], rax
+
 """
-    main_local_vars = {}
+
+    main_block = main_node.children[2]
+    used_vars = get_vars_commande(main_block)
+    used_vars.update(input_vars)
+    used_vars = sorted(used_vars)
+
+    decl_vars = ""
+    for v in used_vars:
+        decl_vars += f"{v}: dq 0\n"
+
+    string_literals = extract_string_literals(p)
+    string_section = ""
+    for s in string_literals:
+        label   = f"str_{abs(hash(s)) % (10**8)}"
+        escaped = s[1:-1].replace('\\', '\\\\').replace('"', '\\"')
+        string_section += f'{label}: db "{escaped}", 0\n'
+
     main_commande_asm = ""
-    env["main"] = {"type": "function", 'params': [], 'return_type': main_node.children[0]}
+    main_local = {}
     for cmd in main_block.children:
-        main_commande_asm += asm_commande(cmd, main_local_vars, "main")
-        #type_commande(cmd, env)
+        main_commande_asm += asm_commande(cmd, main_local, "main")
+
     with open("moule.asm") as f:
         prog_asm = f.read()
 
-    prog_asm = prog_asm.replace("DECL_VARS", decl_vars)
     prog_asm = prog_asm.replace("FUNCTIONS", functions_asm)
+    prog_asm = prog_asm.replace("DECL_VARS", decl_vars + string_section)
     prog_asm = prog_asm.replace("INIT_VARS", init_vars)
     prog_asm = prog_asm.replace("COMMANDE", main_commande_asm)
+    prog_asm = prog_asm.replace("RETOUR", "nop")
+
     return prog_asm
 
 
 def indent(text, amount=4):
     """Indents each line of a string with spaces."""
     return "".join(" " * amount + line for line in text.splitlines(True))
+def get_vars_expression(e):
+    vars_set = set()
+    if isinstance(e, Token):
+        if e.type == "IDENTIFIER":
+            vars_set.add(e.value)
+    elif isinstance(e, Tree):
+        for child in e.children:
+            vars_set.update(get_vars_expression(child))
+    return vars_set
 
+def get_vars_commande(c):
+    vars_set = set()
+    if hasattr(c, 'data'):
+        if c.data == "string_decl":
+            declared_strings.add(c.children[0].value)
+
+        elif c.data == "string_decl_empty":
+            declared_strings.add(c.children[0].value)
+
+        elif c.data == "affectation":
+            var_name = c.children[0].value
+            expr     = c.children[1]
+
+            if expr.data == "int_expression":
+                child = expr.children[0]
+                if isinstance(child, Tree) and child.data == "str_index":
+                    declared_chars.add(var_name)
+
+            if expr.data == "string_expression":
+                declared_strings.add(var_name)
+
+            vars_set.add(var_name)
+            vars_set.update(get_vars_expression(expr))
+        elif c.data == "sequence":
+            for child in c.children:
+                vars_set.update(get_vars_commande(child))
+        elif c.data in ("while", "ite"):
+            vars_set.update(get_vars_expression(c.children[0]))
+            vars_set.update(get_vars_commande(c.children[1]))
+            if len(c.children) == 3:
+                vars_set.update(get_vars_commande(c.children[2]))
+        elif c.data in ("print", "ret"):
+            vars_set.update(get_vars_expression(c.children[0]))
+    return vars_set
+
+
+
+def extract_string_literals(node, acc=None):
+    if acc is None:
+        acc = set()
+    if isinstance(node, Tree):
+        
+        if node.data == "string_expr" \
+           and isinstance(node.children[0], Token) \
+           and node.children[0].type == "STRING":
+            acc.add(node.children[0].value)
+
+        
+        if node.data == "string_decl":
+            token = node.children[1]
+            if isinstance(token, Token) and token.type == "STRING":
+                acc.add(token.value)
+
+        for child in node.children:
+            extract_string_literals(child, acc)
+    return acc
 
 def pp_expression(e):
+    if isinstance(e, Tree) and e.data == "string_expression":
+        return pp_expression(e.children[0])
+    if isinstance(e, Tree) and e.data == "int_expression":
+        return pp_expression(e.children[0])
+    if isinstance(e, Tree) and e.data == "string_expr":
+        return e.children[0].value
+    if isinstance(e, Tree) and e.data == "str_concat":
+        return f"{pp_expression(e.children[0])} + {pp_expression(e.children[1])}"
+    if isinstance(e, Tree) and e.data == "str_index":
+        return f"{e.children[0].value}[{pp_expression(e.children[1])}]"
+    if isinstance(e, Tree) and e.data == "strlen":
+        return f"len({pp_expression(e.children[0])})"
+    if isinstance(e, Tree) and e.data == "atoi":
+        return f"atoi({pp_expression(e.children[0])})"
+    
     if e.data == "number" or e.data == "var":
         return e.children[0].value
     if e.data == "arr_access":
@@ -483,6 +729,10 @@ def pp_block(b):
 
 
 def pp_commande(c):
+    if c.data == "string_decl":
+        return f"char *{c.children[0].value} = {c.children[1].value}"
+    if c.data == "string_decl_empty":
+        return f"char *{c.children[0].value}"
     if c.data == "declaration":
         type_name = c.children[0].value
         var_name = c.children[1].value
