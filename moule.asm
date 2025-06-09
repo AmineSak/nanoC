@@ -1,23 +1,32 @@
-extern printf, atoi
+; --- moule.asm ---
+extern printf, atoi, malloc
 
 section .data
+    fmt_int:  db "%ld", 10, 0   ; Use %ld for 64-bit integers
+    argv_ptr: dq 0
 
-DECL_VARS
-argv: dq 0
-fmt_int: db "%d", 10, 0
+    DECL_VARS                   ; Placeholder for global variables
 
 section .text
 global main
 
-FUNCTIONS
+FUNCTIONS                       ; Placeholder for all user-defined functions
 
+; --- Main function entry point ---
 main:
-    push rbp                ; Save old base pointer
-    mov rbp, rsp           ; Set up new base pointer
-    sub rsp, 128           ; Reserve space for local variables (aligned to 16 bytes)
-    mov [argv], rsi        ; Store argv
+    push rbp
+    mov rbp, rsp
+    sub rsp, 256                ; Reserve stack space for main's local variables
     
-INIT_VARS
+    ; Save command line arguments pointer
+    mov [argv_ptr], rsi
 
-COMMANDE
-
+    INIT_VARS                   ; Placeholder for initializing main's parameters from argv
+    
+    COMMANDE                    ; Placeholder for main's body
+    
+    ; Main function epilogue (return value in rax is the exit code)
+main_epilogue:
+    mov rsp, rbp
+    pop rbp
+    ret
