@@ -82,7 +82,7 @@ op2asm = {
 }
 
 
-from lark import Tree, Token
+
 
 def asm_expression(e, local_vars):
     """Compiles an expression. local_vars is the map of local names to [rbp-offset]."""
@@ -202,33 +202,60 @@ def asm_commande(c, local_vars, func_name):
     """Compiles a command. Needs local_vars for context and func_name for returns."""
     global cpt
 
+   
     if c.data == "string_decl":
-        var = c.children[0].value
-        label = f"str_{abs(hash(c.children[1])) % (10 ** 8)}"
-        return f"lea rax, [{label}] \nmov [{var}], rax"
+        var   = c.children[0].value
+        lit   = c.children[1]            
+        label = f"str_{abs(hash(lit)) % (10**8)}"
 
+        
+        env[var] = {"type": "char*"}
+        declared_strings.add(var)
+
+        
+        return (
+            f"lea rax, [{label}]    ; adresse de la chaîne {lit.value}\n"
+            f"mov [{var}], rax      ; stocke dans {var}\n"
+        )
+
+    
     if c.data == "string_decl_empty":
         var = c.children[0].value
-        return f"""mov rdi, 1 
-call malloc
-mov byte [rax], 0
-mov [{var}], rax"""
 
+        
+        env[var] = {"type": "char*"}
+        declared_strings.add(var)
+
+        return (
+            "mov rdi, 1            ; allouer 1 octet\n"
+            "call malloc           ; rax = malloc(1)\n"
+            "mov byte [rax], 0     ; init '\\0'\n"
+            f"mov [{var}], rax      ; stocke dans {var}\n"
+        )
+
+    
     if c.data == "declaration":
         var_type = c.children[0].value
         var_name = c.children[1].value
-        if var_type != type_expression(c.children[2], env):
+        expr     = c.children[2]
+
+        
+        if var_type != type_expression(expr, env):
             raise TypeError(
                 f"Incompatibilité de type pour la déclaration de '{var_name}'."
             )
+
+       
         offset = -(8 * (1 + len(local_vars)))
-        local_vars[var_name] = {'off': offset, 'type': var_type}
-        env[var_name] = {"type": var_type}
-        exp_asm = asm_expression(c.children[2], local_vars)
-        return f"""
-    {exp_asm}
-    mov [rbp{offset}], rax  ; local var {var_name}
-"""
+        local_vars[var_name] = {"off": offset, "type": var_type}
+        env[var_name]        = {"type": var_type}
+
+       
+        exp_asm = asm_expression(expr, local_vars)
+        return (
+            f"{exp_asm}\n"
+            f"mov [rbp{offset}], rax   ; local var {var_name}\n"
+        )
     if c.data == "array_declaration":
         var_type = c.children[0].value
         arr_name = c.children[2].value
@@ -242,7 +269,7 @@ mov [{var}], rax"""
         elif var_type == "char*":
             size = 8
             
-        # Create a local variable for the *pointer* to the array
+        
         offset = -(8 * (1 + len(local_vars)))
         local_vars[arr_name] = {'off': offset, 'type': var_type}
         env[arr_name] = {"type": f"{var_type}[]", 'size': size_expr}
@@ -309,7 +336,7 @@ mov [{var}], rax"""
             raise NameError(f"Array '{arr_name}' not defined.")
 
         base_addr_location = (
-            f"[rbp{local_vars[arr_name]["off"]}]"
+            f"[rbp{local_vars[arr_name]['off']}]"
             if arr_name in local_vars
             else f"[{arr_name}]"
         )
@@ -416,7 +443,7 @@ endif{idx}: nop
 """
     if c.data == "print":
         exp = c.children[0]
-        asm = asm_expression(exp)
+        asm = asm_expression(exp,local_vars)
 
         
         raw = exp
@@ -792,8 +819,6 @@ def pp_program(p):
             body = pp_block(child.children[2])
             output.append(f"{type_name} main({params}) {{\n{indent(body)}}}\n")
     return "\n".join(output)
-
-
 if __name__ == "__main__":
     with open("test.c") as f:
         src = f.read()
