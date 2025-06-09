@@ -1,9 +1,11 @@
-from lark import Lark
+from lark import Lark, Tree, Token
 from typage import type_expression, type_commande
 
 # Global state for the compiler
 env = {}  # Symbol table for global variables and functions
 cpt = 0  # Counter for generating unique labels
+declared_strings = set()
+declared_chars=set()
 
 g = Lark(
     """
@@ -62,6 +64,74 @@ op2asm = {
     "==": "cmp rax, rbx\nsete al\nmovzx rax, al",
     "!=": "cmp rax, rbx\nsetne al\nmovzx rax, al",
 }
+
+
+def get_vars_expression(e):
+    vars_set = set()
+    if isinstance(e, Token):
+        if e.type == "IDENTIFIER":
+            vars_set.add(e.value)
+    elif isinstance(e, Tree):
+        for child in e.children:
+            vars_set.update(get_vars_expression(child))
+    return vars_set
+
+
+def get_vars_commande(c):
+    vars_set = set()
+    if hasattr(c, 'data'):
+        if c.data == "string_decl":
+            declared_strings.add(c.children[0].value)
+
+        elif c.data == "string_decl_empty":
+            declared_strings.add(c.children[0].value)
+
+        elif c.data == "affectation":
+            var_name = c.children[0].value
+            expr     = c.children[1]
+
+            if expr.data == "int_expression":
+                child = expr.children[0]
+                if isinstance(child, Tree) and child.data == "str_index":
+                    declared_chars.add(var_name)
+
+            if expr.data == "string_expression":
+                declared_strings.add(var_name)
+
+            vars_set.add(var_name)
+            vars_set.update(get_vars_expression(expr))
+        elif c.data == "sequence":
+            for child in c.children:
+                vars_set.update(get_vars_commande(child))
+        elif c.data in ("while", "ite"):
+            vars_set.update(get_vars_expression(c.children[0]))
+            vars_set.update(get_vars_commande(c.children[1]))
+            if len(c.children) == 3:
+                vars_set.update(get_vars_commande(c.children[2]))
+        elif c.data in ("print", "ret"):
+            vars_set.update(get_vars_expression(c.children[0]))
+    return vars_set
+
+
+def extract_string_literals(node, acc=None):
+    if acc is None:
+        acc = set()
+    if isinstance(node, Tree):
+        # déjà existant :
+        if node.data == "string_expr" \
+           and isinstance(node.children[0], Token) \
+           and node.children[0].type == "STRING":
+            acc.add(node.children[0].value)
+
+        # nouveau : attrape le literal dans string_decl
+        if node.data == "string_decl":
+            token = node.children[1]
+            if isinstance(token, Token) and token.type == "STRING":
+                acc.add(token.value)
+
+        for child in node.children:
+            extract_string_literals(child, acc)
+    return acc
 
 
 def asm_expression(e, local_vars):

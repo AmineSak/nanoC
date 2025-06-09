@@ -58,7 +58,6 @@ def type_expression(e, env):
         if e.data == 'array_decl_type':
             return f"{e.children[0].value}[]"
         if e.data == "return_statement":
-            print(e.children[0])
             exp_type = type_expression(e.children[0], env)
             if exp_type != env['return_type']:
                 raise TypeError(f"Type de retour incorrect : attendu {env['return_type']}, obtenu {exp_type}.")
