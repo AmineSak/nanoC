@@ -440,6 +440,7 @@ def asm_function(f):
 
     env[func_name] = {"type": "function", 'params': []}
     local_vars = {}
+    local_vars[func_name] = {"type": "function", 'params': []}
     arg_registers = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
 
     asm_code = f"""
@@ -453,8 +454,10 @@ def asm_function(f):
         param_type = param_decl.children[0].value
         if param_decl.data == "array_decl_type":
             env[func_name]["params"].append(f"{param_type}[]")
+            local_vars[func_name]["params"].append(f"{param_type}[]")
         else:
             env[func_name]["params"].append(param_type)
+            local_vars[func_name]["params"].append(param_type)
         param_name = param_decl.children[-1].value
         offset = -(8 * (1 + len(local_vars)))
         local_vars[param_name] = {'off': offset, 'type': param_type}
@@ -462,6 +465,7 @@ def asm_function(f):
             f"    mov [rbp{offset}], {arg_registers[i]} ; Save param '{param_name}'\n"
         )
     env[func_name]["return_type"] = type_expression(return_type_decl, local_vars)
+    local_vars[func_name]["return_type"] = type_expression(return_type_decl, local_vars)
     for cmd in block_node.children:
         asm_code += asm_commande(cmd, local_vars, func_name) + "\n"
     asm_code += f"""

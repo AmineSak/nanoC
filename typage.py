@@ -43,6 +43,7 @@ def type_expression(e, env):
                 raise TypeError(f"Opération {e.children[1].value} entre types incompatibles : {left_type} et {right_type}.")
             return left_type
         if e.data == "function_call":
+            print(env)
             func_name = e.children[0].value
             if func_name not in env or env[func_name]['type'] != 'function':
                 raise TypeError(f"Fonction '{func_name}' non déclarée ou de type incorrect.")
