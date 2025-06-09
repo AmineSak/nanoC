@@ -1,67 +1,59 @@
 from lark import Lark
 
-from typage import type_commande, type_expression
-
-env = {}
-cpt = 0
-func_env = {}  # Store function definitions
-
+# Global state for the compiler
+env = {}  # Symbol table for global variables and functions
+cpt = 0  # Counter for generating unique labels
 
 g = Lark(
     """
-IDENTIFIER: /[a-zA-Z_][a-zA-Z0-9]*/
-NUMBER: /[1-9][0-9]*/ | "0"
-OPBIN: "+" | "-" | "*" | ">" | "==" | "!=" | "<" | ">=" | "<="
-TYPE: "int" | "char*"
+    IDENTIFIER: /[a-zA-Z_][a-zA-Z0-9_]*/
+    NUMBER: /[1-9][0-9]*/ | "0"
+    OPBIN: "+" | "-" | "*" | "/" | "==" | "!=" | ">" | "<" | ">=" | "<="
+    TYPE: "int" | "char*"
 
-typed_var: TYPE IDENTIFIER -> typed_var
+    var_decl: TYPE "[" NUMBER? "]" IDENTIFIER -> array_decl_type
+            | TYPE IDENTIFIER                  -> simple_decl_type
 
-liste_var:                            -> vide
-    | typed_var ("," typed_var)*      -> vars
+    liste_var:                          -> vide
+        | var_decl ("," var_decl)*      -> vars
 
-expression: IDENTIFIER                -> var
-    | NUMBER                          -> number
-    | expression OPBIN expression     -> opbin
-    | IDENTIFIER "(" (expression ("," expression)*)? ")" -> function_call
+    liste_values: expression ("," expression)* -> liste_values
 
-commande: TYPE IDENTIFIER "=" expression ";" -> declaration
-    | TYPE "[" expression "]" IDENTIFIER "=" "{" NUMBER ("," NUMBER)* "}"";" -> array_declaration
-    | IDENTIFIER "=" expression ";"         -> affectation
-    | "while" "(" expression ")" "{" block "}" -> while
-    | "if" "(" expression ")" "{" block "}" ("else" "{" block "}")? -> ite
-    | "printf" "(" expression ")" ";"       -> print
-    | "skip" ";"                            -> skip
-    | commande ";" commande                 -> sequence
-    | "return" "(" expression ")" ";"       -> return_statement
-    | IDENTIFIER "[" expression "]" "=" expression             -> arr_affectation
+    expression: IDENTIFIER "[" expression "]" -> arr_access
+        | IDENTIFIER                -> var
+        | NUMBER                          -> number
+        | expression OPBIN expression     -> opbin
+        | IDENTIFIER "(" (expression ("," expression)*)? ")" -> function_call
 
-block: (commande)* -> block
+    commande: "for" "(" TYPE IDENTIFIER "=" expression ";" expression ";" IDENTIFIER "++" ")" "{" block "}" -> forloop
+        | TYPE "[" expression "]" IDENTIFIER "=" "{" liste_values "}" ";" -> array_declaration_init
+        | TYPE "[" expression "]" IDENTIFIER ";"                         -> array_declaration
+        | TYPE IDENTIFIER "=" expression ";"                             -> declaration
+        | IDENTIFIER "[" expression "]" "=" expression ";"               -> arr_affectation
+        | IDENTIFIER "=" expression ";"                                  -> affectation
+        | "while" "(" expression ")" "{" block "}"                       -> while
+        | "if" "(" expression ")" "{" block "}" ("else" "{" block "}")?   -> ite
+        | "printf" "(" expression ")" ";"                                -> print
+        | "return" "(" expression ")" ";"                                -> return_statement
+        | "skip" ";"                                                     -> skip
+        | commande ";" commande                                          -> sequence
 
-main: TYPE "main" "(" liste_var ")" "{" block "}" -> main
+    block: (commande)* -> block
+    program: (function)* main -> program
+    main: TYPE "main" "(" liste_var ")" "{" block "}" -> main
+    function: var_decl "(" liste_var ")" "{" block "}" -> function
 
-function: typed_var "(" liste_var ")" "{" block "}" -> function
-
-program: function* main -> program
-
-%import common.WS
-%ignore WS
-""",
+    %import common.WS
+    %ignore WS
+    """,
     start="program",
 )
-
-
-def get_vars_expression(e):
-    pass
-
-
-def get_vars_commande(c):
-    pass
-
 
 op2asm = {
     "+": "add rax, rbx",
     "-": "sub rax, rbx",
     "*": "imul rax, rbx",
+    "/": "cqo\nidiv rbx",
     ">": "cmp rax, rbx\nsetg al\nmovzx rax, al",
     "<": "cmp rax, rbx\nsetl al\nmovzx rax, al",
     ">=": "cmp rax, rbx\nsetge al\nmovzx rax, al",
@@ -71,284 +63,301 @@ op2asm = {
 }
 
 
-def asm_expression(e, local_vars=None, params=None):
-    if local_vars is None:
-        local_vars = {}
-    if params is None:
-        params = {}
-
-    if e.data == "var":
-        var_name = e.children[0].value
-        # Parameters are now treated the same as local variables
-        if var_name in local_vars:
-            offset = local_vars[var_name]
-            return f"mov rax, [rbp{offset}]"
-        # The `params` dictionary is no longer needed here.
-        # We can remove the `elif var_name in params:` block entirely.
-        else:
-            # Otherwise it's a global variable
-            return f"mov rax, [{var_name}]"
-
+def asm_expression(e, local_vars):
+    """Compiles an expression. local_vars is the map of local names to [rbp-offset]."""
     if e.data == "number":
         return f"mov rax, {e.children[0].value}"
 
+    if e.data == "var":
+        var_name = e.children[0].value
+        if var_name in local_vars:
+            offset = local_vars[var_name]
+            return f"mov rax, [rbp{offset}]"
+        elif var_name in env:
+            return f"mov rax, [{var_name}]"
+        else:
+            raise NameError(f"Variable '{var_name}' not defined.")
+
+    if e.data == "arr_access":
+        name = e.children[0].value
+        idx_expr = e.children[1]
+
+        # Get the base address of the array (it's a pointer)
+        if name in local_vars:
+            base_addr_location = f"[rbp{local_vars[name]}]"
+        elif name in env:
+            base_addr_location = f"[{name}]"
+        else:
+            raise NameError(f"Array '{name}' not defined.")
+
+        # Calculate index and access memory
+        return f"""
+    {asm_expression(idx_expr, local_vars)}
+    mov rbx, rax                     ; rbx holds the index
+    mov rax, {base_addr_location}    ; rax holds the base pointer
+    mov rax, [rax + rbx * 8]         ; Access the element (8 bytes for int/pointer)
+"""
+
     if e.data == "opbin":
-        e_left = e.children[0]
-        e_op = e.children[1]
-        e_right = e.children[2]
-        asm_left = asm_expression(e_left, local_vars, params)
-        asm_right = asm_expression(e_right, local_vars, params)
-        return f"""{asm_left}
-push rax
-{asm_right}
-mov rbx, rax
-pop rax
-{op2asm[e_op.value]}"""
+        left_asm = asm_expression(e.children[0], local_vars)
+        right_asm = asm_expression(e.children[2], local_vars)
+        op = e.children[1].value
+        return f"""
+    {right_asm}
+    push rax
+    {left_asm}
+    pop rbx
+    {op2asm[op]}
+"""
 
     if e.data == "function_call":
         func_name = e.children[0].value
-        args = e.children[1:] if len(e.children) > 1 else []
-
-        # System V AMD64 ABI uses these registers for the first 6 integer/pointer arguments
+        args = e.children[1:]
         arg_registers = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
-
         if len(args) > len(arg_registers):
-            raise NotImplementedError("More than 6 arguments are not supported yet.")
-
-        if func_name not in func_env and func_name not in ["printf", "atoi"]:
-            raise TypeError(f"Function '{func_name}' not defined.")
+            raise NotImplementedError(
+                "Functions with more than 6 arguments are not supported."
+            )
 
         asm_code = ""
-        # 1. Evaluate all arguments and push them onto the stack to save them.
-        # We do this to avoid an argument's evaluation clobbering a register
-        # needed for another argument.
         for arg in args:
-            asm_code += asm_expression(arg, local_vars, params) + "\n"
+            asm_code += asm_expression(arg, local_vars) + "\n"
             asm_code += "push rax\n"
-
-        # 2. Pop the evaluated arguments from the stack into the correct registers.
-        # Note: we pop in reverse order of how they were pushed.
         for i in range(len(args)):
-            reg = arg_registers[i]
-            asm_code += f"pop {reg}\n"
+            asm_code += f"pop {arg_registers[i]}\n"
 
-        # Special handling for printf which needs rax to be 0 for varargs
+        # Special handling for printf
         if func_name == "printf":
             asm_code += "xor rax, rax\n"
 
-        # 3. Call the function
         asm_code += f"call {func_name}\n"
-
-        # 4. No stack cleanup (`add rsp, ...`) is needed because the callee doesn't clean
-        # the registers, and we didn't leave anything on the stack.
-
         return asm_code
 
 
-def asm_commande(c, local_vars=None, params=None, func_name=None):
+def asm_commande(c, local_vars, func_name):
+    """Compiles a command. Needs local_vars for context and func_name for returns."""
     global cpt
 
-    if local_vars is None:
-        local_vars = {}
-    if params is None:
-        params = {}
-
     if c.data == "declaration":
-        var_type = c.children[0].value
         var_name = c.children[1].value
-        exp = c.children[2]
-
-        # Add to environment
-        env[var_name] = var_type
-
-        # FIXED: Always treat main function variables as locals
-        # Calculate offset from rbp (always negative for locals)
-        offset = -(8 + 8 * len(local_vars))
+        offset = -(8 * (1 + len(local_vars)))
         local_vars[var_name] = offset
+        exp_asm = asm_expression(c.children[2], local_vars)
+        return f"""
+    {exp_asm}
+    mov [rbp{offset}], rax  ; local var {var_name}
+"""
+    if c.data == "array_declaration":
+        arr_name = c.children[2].value
+        size_expr = c.children[1]
 
-        exp_asm = asm_expression(exp, local_vars, params)
-        return f"{exp_asm}\nmov [rbp{offset}], rax  ; local var {var_name}"
+        # Create a local variable for the *pointer* to the array
+        offset = -(8 * (1 + len(local_vars)))
+        local_vars[arr_name] = offset
+
+        return f"""
+    ; Allocate memory for array '{arr_name}'
+    {asm_expression(size_expr, local_vars)}
+    mov rdi, rax             ; Number of elements
+    mov rax, 8               ; Size of each element (int or pointer)
+    imul rdi, rax            ; Total bytes
+    call malloc
+    mov [rbp{offset}], rax    ; Store pointer in local variable '{arr_name}'
+"""
+    if c.data == "array_declaration_init":
+        arr_name = c.children[2].value
+        size_expr = c.children[1]
+        offset = -(8 * (1 + len(local_vars)))
+        local_vars[arr_name] = offset
+
+        code = f"""
+    ; Allocate memory for array '{arr_name}'
+    {asm_expression(size_expr, local_vars)}
+    mov rdi, rax
+    mov rax, 8
+    imul rdi, rax
+    call malloc
+    mov [rbp{offset}], rax
+"""
+        liste_values_node = c.children[3]
+        for i, val_expr in enumerate(liste_values_node.children):
+            code += f"""
+    ; Initialize {arr_name}[{i}]
+    {asm_expression(val_expr, local_vars)}
+    mov rbx, [rbp{offset}]
+    mov [rbx + {i*8}], rax
+"""
+        return code
 
     if c.data == "affectation":
-        var = c.children[0]
-        exp = c.children[1]
-        var_name = var.value
-
-        # Check if it's a local variable
+        var_name = c.children[0].value
+        exp_asm = asm_expression(c.children[1], local_vars)
         if var_name in local_vars:
             offset = local_vars[var_name]
-            return f"{asm_expression(exp, local_vars, params)}\nmov [rbp{offset}], rax"
-        # Check if it's a parameter
-        elif var_name in params:
-            offset = params[var_name]
-            return f"{asm_expression(exp, local_vars, params)}\nmov [rbp+{offset}], rax"
-        # Otherwise it's a global
+            return f"{exp_asm}\nmov [rbp{offset}], rax"
+        elif var_name in env:
+            return f"{exp_asm}\nmov [{var_name}], rax"
         else:
-            if var_name not in env:
-                raise TypeError(f"Variable '{var_name}' non déclarée.")
-            return f"{asm_expression(exp, local_vars, params)}\nmov [{var_name}], rax"
-
-    if c.data == "skip":
-        return "nop"
-
-    if c.data == "print":
-        exp_type = type_expression(c.children[0], env)
-        if exp_type == "int":
-            return f"""{asm_expression(c.children[0], local_vars, params)}
-mov rsi, rax
-mov rdi, fmt_int
-xor rax, rax
-call printf
-"""
-        elif exp_type == "char*":
-            return f"""{asm_expression(c.children[0], local_vars, params)}
-mov rsi, rax
-mov rdi, fmt_str
-xor rax, rax
-call printf
-"""
+            raise NameError(f"Variable '{var_name}' not defined.")
 
     if c.data == "arr_affectation":
-        name, idx, val = c.children[0].value, c.children[1], c.children[2]
-        return (
-            f"{asm_expression(idx)}\n"
-            "mov rcx, rax\n"
-            "shl rcx, 3\n"
-            f"mov rdx, [{name}]\n"
-            f"{asm_expression(val)}\n"
-            "mov [rdx + rcx], rax"
+        arr_name = c.children[0].value
+        idx_expr = c.children[1]
+        val_expr = c.children[2]
+        if arr_name not in local_vars and arr_name not in env:
+            raise NameError(f"Array '{arr_name}' not defined.")
+
+        base_addr_location = (
+            f"[rbp{local_vars[arr_name]}]"
+            if arr_name in local_vars
+            else f"[{arr_name}]"
         )
 
+        return f"""
+    {asm_expression(val_expr, local_vars)}
+    push rax
+    {asm_expression(idx_expr, local_vars)}
+    mov rbx, rax
+    pop rax
+    mov rcx, {base_addr_location}
+    mov [rcx + rbx * 8], rax
+"""
+
+    if c.data == "return_statement":
+        exp_asm = asm_expression(c.children[0], local_vars)
+        return f"""
+    {exp_asm}
+    jmp {func_name}_epilogue
+"""
+    if c.data == "forloop":
+        loop_var = c.children[1].value
+        init_expr = c.children[2]
+        cond_expr = c.children[3]
+        body_block = c.children[5]
+        offset = -(8 * (1 + len(local_vars)))
+        local_vars[loop_var] = offset
+        body_asm = ""
+        for cmd in body_block.children:
+            body_asm += asm_commande(cmd, local_vars, func_name)
+        idx = cpt
+        cpt += 1
+        return f"""
+    ; For loop init
+    {asm_expression(init_expr, local_vars)}
+    mov [rbp{offset}], rax
+for_loop_{idx}:
+    ; For loop condition
+    {asm_expression(cond_expr, local_vars)}
+    cmp rax, 0
+    jz for_end_{idx}
+    ; For loop body
+    {body_asm}
+    ; For loop increment
+    inc qword [rbp{offset}]
+    jmp for_loop_{idx}
+for_end_{idx}:
+    nop
+"""
     if c.data == "while":
         exp = c.children[0]
-        block = c.children[1]  # This is now a Tree('block', ...)
-
-        body_asm = ""
-        for cmd in block.children:  # We can now loop through the block's children
-            body_asm += asm_commande(cmd, local_vars, params, func_name) + "\n"
-
+        block = c.children[1]
+        body_asm = "".join(
+            [asm_commande(cmd, local_vars, func_name) for cmd in block.children]
+        )
         idx = cpt
         cpt += 1
         return f"""
 loop{idx}:
-    {asm_expression(exp, local_vars, params)}
+    {asm_expression(exp, local_vars)}
     cmp rax, 0
     jz end{idx}
     {body_asm}
     jmp loop{idx}
-end{idx}:
-    nop
+end{idx}: nop
 """
-
     if c.data == "ite":
-        condition = c.children[0]
-        then_block = c.children[1]  # This is the Tree for the 'then' block
+        cond_asm = asm_expression(c.children[0], local_vars)
+        then_block = c.children[1]
+        then_asm = "".join(
+            [asm_commande(cmd, local_vars, func_name) for cmd in then_block.children]
+        )
         idx = cpt
         cpt += 1
-
-        # Compile the 'then' block
-        then_asm = ""
-        for cmd in then_block.children:
-            then_asm += asm_commande(cmd, local_vars, params, func_name) + "\n"
-
-        if len(c.children) > 2:  # There's an else clause
-            else_block = c.children[2]  # This is the Tree for the 'else' block
-
-            # Compile the 'else' block
-            else_asm = ""
-            for cmd in else_block.children:
-                else_asm += asm_commande(cmd, local_vars, params, func_name) + "\n"
-
+        if len(c.children) > 2:
+            else_block = c.children[2]
+            else_asm = "".join(
+                [
+                    asm_commande(cmd, local_vars, func_name)
+                    for cmd in else_block.children
+                ]
+            )
             return f"""
-    {asm_expression(condition, local_vars, params)}
+    {cond_asm}
     cmp rax, 0
     jz else{idx}
 {then_asm}
     jmp endif{idx}
 else{idx}:
 {else_asm}
-endif{idx}:
-    nop
+endif{idx}: nop
 """
-        else:  # No else clause
+        else:
             return f"""
-    {asm_expression(condition, local_vars, params)}
+    {cond_asm}
     cmp rax, 0
     jz endif{idx}
 {then_asm}
-endif{idx}:
-    nop
+endif{idx}: nop
 """
-
+    if c.data == "print":
+        return f"""
+    {asm_expression(c.children[0], local_vars)}
+    mov rsi, rax
+    mov rdi, fmt_int
+    xor rax, rax
+    call printf
+"""
+    if c.data == "skip":
+        return "nop"
     if c.data == "sequence":
-        d = c.children[0]
-        tail = c.children[1]
-        return f"{asm_commande(d, local_vars, params)}\n{asm_commande(tail, local_vars, params)}"
-    elif c.data == "return_statement":
-        if func_name is None:
-            raise Exception("Return statement found outside of a function.")
-
-        # 1. Evaluate the expression. The result goes into RAX.
-        exp_asm = asm_expression(c.children[0], local_vars, params)
-
-        # 2. Jump to the function's epilogue.
-        return f"""{exp_asm}
-    jmp {func_name}_epilogue
-"""
+        return (
+            asm_commande(c.children[0], local_vars, func_name)
+            + "\n"
+            + asm_commande(c.children[1], local_vars, func_name)
+        )
+    return ""
 
 
 def asm_function(f):
-    global func_env
-    # ... (extract func_name, etc. as before) ...
-    return_type = f.children[0].children[0].value
-    func_name = f.children[0].children[1].value
-    params_tree = f.children[1].children if hasattr(f.children[1], "children") else []
-
-    # ... (Store in func_env as before) ...
-    func_env[func_name] = {"return_type": return_type, "params": []}
-
-    # These are the registers where the parameters will arrive
-    arg_registers = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
-
-    # We will treat parameters as local variables stored on the stack.
-    # This is different from the old param_offsets.
-    local_vars = {}
-
-    # Prologue
-    asm_code = f"""
-; Function: {func_name}
-{func_name}:
-    push rbp                ; Save old base pointer
-    mov rbp, rsp            ; Set new base pointer
-    sub rsp, 128            ; Reserve stack space for local variables
-"""
-
-    # NEW: Copy parameters from registers to the stack
-    if len(params_tree) > len(arg_registers):
-        raise NotImplementedError("More than 6 arguments are not supported yet.")
-
-    for i, param in enumerate(params_tree):
-        param_type = param.children[0].value
-        param_name = param.children[1].value
-        reg = arg_registers[i]
-
-        # Calculate a *local variable* offset for the parameter
-        offset = -(8 + 8 * len(local_vars))
-        local_vars[param_name] = offset
-
-        # Add the instruction to save the register to the stack
-        asm_code += (
-            f"    mov [rbp{offset}], {reg} ; Save parameter '{param_name}' from {reg}\n"
+    return_type_decl = f.children[0]
+    if return_type_decl.data == "array_decl_type":
+        raise TypeError(
+            "Functions cannot return arrays directly. Return a pointer instead."
         )
-        func_env[func_name]["params"].append((param_type, param_name))
-
+    func_name = return_type_decl.children[1].value
+    params_tree = f.children[1].children
     block_node = f.children[2]
 
-    # 2. Loop through the commands INSIDE the block node.
-    for cmd in block_node.children:
-        asm_code += asm_commande(cmd, local_vars, {}, func_name) + "\n"
+    env[func_name] = {"type": "function"}
+    local_vars = {}
+    arg_registers = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
 
-    # This part is now correct
+    asm_code = f"""
+; --- Function: {func_name} ---
+{func_name}:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 256
+"""
+    for i, param_decl in enumerate(params_tree):
+        param_name = param_decl.children[-1].value
+        offset = -(8 * (1 + len(local_vars)))
+        local_vars[param_name] = offset
+        asm_code += (
+            f"    mov [rbp{offset}], {arg_registers[i]} ; Save param '{param_name}'\n"
+        )
+    for cmd in block_node.children:
+        asm_code += asm_commande(cmd, local_vars, func_name) + "\n"
     asm_code += f"""
 {func_name}_epilogue:
     mov rsp, rbp
@@ -359,160 +368,172 @@ def asm_function(f):
 
 
 def asm_program(p):
-    # Process functions
     functions_asm = ""
-    main_idx = 0
-    for i in range(len(p.children)):
-        if hasattr(p.children[i], "data") and p.children[i].data == "function":
-            functions_asm += asm_function(p.children[i])
-        if hasattr(p.children[i], "data") and p.children[i].data == "main":
-            main_idx = i
-            break
+    main_node = None
+    for child in p.children:
+        if child.data == "function":
+            functions_asm += asm_function(child)
+        elif child.data == "main":
+            main_node = child
 
-    main = p.children[main_idx].children
-
-    # Process main parameters - these become global variables
-    for c in main[1].children:
-        env[c.children[1].value] = c.children[0].value
+    main_params = main_node.children[1].children
+    main_block = main_node.children[2]
+    decl_vars = ""
+    init_vars = ""
+    for i, param in enumerate(main_params):
+        var_name = param.children[1].value
+        env[var_name] = {"type": "global_var"}
+        decl_vars += f"{var_name}: dq 0\n"
+        init_vars += f"""
+    mov rdi, [argv_ptr]
+    mov rdi, [rdi + {(i+1)*8}]
+    call atoi
+    mov [{var_name}], rax
+"""
+    main_local_vars = {}
+    main_commande_asm = ""
+    for cmd in main_block.children:
+        main_commande_asm += asm_commande(cmd, main_local_vars, "main")
 
     with open("moule.asm") as f:
         prog_asm = f.read()
 
-    # FIXED: Create local vars for main function too
-    main_local_vars = {}
-    init_vars = ""
-    decl_vars = ""
-    commande = ""
-
-    # Process main parameters for init vars and declarations
-    for i, c in enumerate(main[1].children):
-        if env[c.children[1].value] == "int":
-            init_vars += f"""mov rbx, [argv]
-mov rdi, [rbx + {(i+1)*8}]
-call atoi
-mov [{c.children[1].value}], rax
-"""
-            decl_vars += f"{c.children[1].value}: dq 0\n"
-        elif env[c.children[1].value] == "char*":
-            decl_vars += f"{c.children[1].value}: dq 0\n"
-
-    # Add function declarations
-    for func_name, _ in func_env.items():
-        decl_vars += f"; Function {func_name} is defined in the text section\n"
-
-    block_node = main[2]
-
-    # 2. Loop through the commands inside the block.
-    for cmd in block_node.children:
-        # Pass the actual command, not the block, to asm_commande
-        asm_c = asm_commande(cmd, main_local_vars, {}, "main")
-        commande += f"{asm_c}\n"
-
-    # This part is now correct
-    commande += """main_epilogue:
-    mov rsp, rbp
-    pop rbp
-    ret
-"""
-
-    # REMOVE the old RETOUR logic.
-    prog_asm = prog_asm.replace("INIT_VARS", init_vars)
     prog_asm = prog_asm.replace("DECL_VARS", decl_vars)
-    prog_asm = prog_asm.replace("COMMANDE", commande)
-    # The 'RETOUR' placeholder is no longer used, so we can remove its replacement logic.
-    prog_asm = prog_asm.replace(
-        "RETOUR", ""
-    )  # Or just ensure it's not in the template.
     prog_asm = prog_asm.replace("FUNCTIONS", functions_asm)
-
+    prog_asm = prog_asm.replace("INIT_VARS", init_vars)
+    prog_asm = prog_asm.replace("COMMANDE", main_commande_asm)
     return prog_asm
 
 
-def pp_list_typed_vars(l):
-    if not hasattr(l, "children") or not l.children:
-        return ""
-
-    typed_var = l.children[0]
-    type = typed_var.children[0].value
-    var = typed_var.children[1].value
-    L = f"{type} {var}"
-
-    for i in range(1, len(l.children)):
-        typed_var = l.children[i]
-        type = typed_var.children[0].value
-        var = typed_var.children[1].value
-        L += f", {type} {var}"
-    return L
+def indent(text, amount=4):
+    """Indents each line of a string with spaces."""
+    return "".join(" " * amount + line for line in text.splitlines(True))
 
 
 def pp_expression(e):
-    if e.data in ("var", "number"):
-        return f"{e.children[0].value}"
-
+    if e.data == "number" or e.data == "var":
+        return e.children[0].value
+    if e.data == "arr_access":
+        name = e.children[0].value
+        idx = pp_expression(e.children[1])
+        return f"{name}[{idx}]"
+    if e.data == "opbin":
+        left = pp_expression(e.children[0])
+        op = e.children[1].value
+        right = pp_expression(e.children[2])
+        return f"({left} {op} {right})"
     if e.data == "function_call":
         func_name = e.children[0].value
-        args = []
-        for i in range(1, len(e.children)):
-            args.append(pp_expression(e.children[i]))
-        return f"{func_name}({', '.join(args)})"
+        args_str = ", ".join(pp_expression(arg) for arg in e.children[1:])
+        return f"{func_name}({args_str})"
 
-    e_left = e.children[0]
-    e_op = e.children[1]
-    e_right = e.children[2]
-    return f"{pp_expression(e_left)} {e_op.value} {pp_expression(e_right)}"
+
+def pp_var_decl(v):
+    if v.data == "simple_decl_type":
+        type_name = v.children[0].value
+        var_name = v.children[1].value
+        return f"{type_name} {var_name}"
+    if v.data == "array_decl_type":
+        type_name = v.children[0].value
+        size_node = v.children[1]
+        size_str = size_node.value if size_node else ""
+        var_name = v.children[2].value
+        return f"{type_name}[{size_str}] {var_name}"
+
+
+def pp_block(b):
+    return "".join(pp_commande(cmd) for cmd in b.children)
 
 
 def pp_commande(c):
     if c.data == "declaration":
-        var_type = c.children[0].value
+        type_name = c.children[0].value
         var_name = c.children[1].value
-        exp = c.children[2]
-        return f"{var_type} {var_name} = {pp_expression(exp)};"
+        expr = pp_expression(c.children[2])
+        return f"{type_name} {var_name} = {expr};\n"
+    if c.data == "array_declaration":
+        type_name = c.children[0].value
+        size = pp_expression(c.children[1])
+        name = c.children[2].value
+        return f"{type_name}[{size}] {name};\n"
+    if c.data == "array_declaration_init":
+        type_name = c.children[0].value
+        size = pp_expression(c.children[1])
+        name = c.children[2].value
+        vals_str = ", ".join(pp_expression(v) for v in c.children[3].children)
+        return f"{type_name}[{size}] {name} = {{ {vals_str} }};\n"
     if c.data == "affectation":
-        var = c.children[0]
-        exp = c.children[1]
-        return f"{var.value} = {pp_expression(exp)};"
-    if c.data == "skip":
-        return "skip;"
-    if c.data == "print":
-        return f"printf({pp_expression(c.children[0])});"
-    if c.data == "while":
-        exp = c.children[0]
-        body = c.children[1]
-        return f"while ({pp_expression(exp)}) {{{pp_commande(body)}}}"
-    if c.data == "sequence":
-        d = c.children[0]
-        tail = c.children[1]
-        return f"{pp_commande(d)} {pp_commande(tail)}"
+        name = c.children[0].value
+        expr = pp_expression(c.children[1])
+        return f"{name} = {expr};\n"
     if c.data == "arr_affectation":
         name = c.children[0].value
         idx = pp_expression(c.children[1])
         expr = pp_expression(c.children[2])
-        return f"{name}[{idx}] = {expr}"
+        return f"{name}[{idx}] = {expr};\n"
+    if c.data == "return_statement":
+        expr = pp_expression(c.children[0])
+        return f"return({expr});\n"
+    if c.data == "print":
+        expr = pp_expression(c.children[0])
+        return f"printf({expr});\n"
+    if c.data == "skip":
+        return "skip;\n"
+    if c.data == "sequence":
+        return pp_commande(c.children[0]) + pp_commande(c.children[1])
+    if c.data == "while":
+        cond = pp_expression(c.children[0])
+        body = pp_block(c.children[1])
+        return f"while ({cond}) {{\n{indent(body)}}}\n"
     if c.data == "ite":
-        condition = c.children[0]
-        then_body = c.children[1]
+        cond = pp_expression(c.children[0])
+        then_body = pp_block(c.children[1])
+        if_str = f"if ({cond}) {{\n{indent(then_body)}}}\n"
         if len(c.children) > 2:
-            else_body = c.children[2]
-            return f"if ({pp_expression(condition)}) {{{pp_commande(then_body)}}} else {{{pp_commande(else_body)}}}"
-        return f"if ({pp_expression(condition)}) {{{pp_commande(then_body)}}}"
+            else_body = pp_block(c.children[2])
+            if_str = if_str.strip() + f" else {{\n{indent(else_body)}}}\n"
+        return if_str
+    if c.data == "forloop":
+        type_name = c.children[0].value
+        loop_var = c.children[1].value
+        init = pp_expression(c.children[2])
+        cond = pp_expression(c.children[3])
+        body = pp_block(c.children[5])
+        return f"for ({type_name} {loop_var} = {init}; {cond}; {loop_var}++) {{\n{indent(body)}}}\n"
 
 
 def pp_function(f):
-    output_type = f.children[0].children[0].value
-    name = f.children[0].children[1].value
-    list_typed_vars = pp_list_typed_vars(f.children[1])
-    body = pp_commande(f.children[2])
-    exp = pp_expression(f.children[3])
-    return f"{output_type} {name}({list_typed_vars}) {{{body} \nreturn({exp});}} "
+    return_decl = pp_var_decl(f.children[0])
+    params = ", ".join(pp_var_decl(p) for p in f.children[1].children)
+    body = pp_block(f.children[2])
+    return f"{return_decl}({params}) {{\n{indent(body)}}}\n"
+
+
+def pp_program(p):
+    output = []
+    for child in p.children:
+        if child.data == "function":
+            output.append(pp_function(child))
+        elif child.data == "main":
+            # Main is parsed like a function, so we can use pp_function
+            type_name = child.children[0].value
+            params = ", ".join(pp_var_decl(p) for p in child.children[1].children)
+            body = pp_block(child.children[2])
+            output.append(f"{type_name} main({params}) {{\n{indent(body)}}}\n")
+    return "\n".join(output)
 
 
 if __name__ == "__main__":
-    with open("simple.c") as f:
+    with open("test.c") as f:
         src = f.read()
     ast = g.parse(src)
 
+    print("--- Pretty-Printed Source ---")
+    print(pp_program(ast))
+    print("-----------------------------\n")
+
     # Generate assembly
+    print("--- Compilation ---")
     asm_code = asm_program(ast)
 
     # Write assembly to file
