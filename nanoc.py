@@ -87,6 +87,9 @@ from lark import Tree, Token
 def asm_expression(e, local_vars):
     """Compiles an expression. local_vars is the map of local names to [rbp-offset]."""
     global cpt
+    if isinstance(e, Tree) and e.data in ("string_expression","int_expression"):
+        return asm_expression(e.children[0], local_vars)
+
 
     if isinstance(e, Token):
         if e.type == "NUMBER":
