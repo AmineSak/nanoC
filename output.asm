@@ -175,6 +175,41 @@ else1:
 
 endif1: nop
 
+    ; For loop init
+    mov rax, 0
+    mov [rbp-24], rax
+for_loop_2:
+    ; For loop condition
+    
+    mov rax, 10
+    push rax
+    mov rax, [rbp-24]
+    pop rbx
+    cmp rax, rbx
+setl al
+movzx rax, al
+
+    cmp rax, 0
+    jz for_end_2
+    ; For loop body
+    
+    
+    mov rax, [rbp-24]
+    mov rbx, rax                     ; rbx holds the index
+    mov rax, [rbp-8]    ; rax holds the base pointer
+    mov rax, [rax + rbx * 8]         ; Access the element (8 bytes for int/pointer)
+
+    mov rsi, rax
+    mov rdi, fmt_int
+    xor rax, rax
+    call printf
+
+    ; For loop increment
+    inc qword [rbp-24]
+    jmp for_loop_2
+for_end_2:
+    nop
+
     mov rax, [rbp-16]
     mov rsi, rax
     mov rdi, fmt_int

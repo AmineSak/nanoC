@@ -1,4 +1,5 @@
 from lark import Lark
+from typage import type_expression, type_commande
 
 # Global state for the compiler
 env = {}  # Symbol table for global variables and functions
@@ -9,7 +10,7 @@ g = Lark(
     IDENTIFIER: /[a-zA-Z_][a-zA-Z0-9_]*/
     NUMBER: /[1-9][0-9]*/ | "0"
     OPBIN: "+" | "-" | "*" | "/" | "==" | "!=" | ">" | "<" | ">=" | "<="
-    TYPE: "int" | "char*"
+    TYPE: "int" | "char*" | "int[]" | "char*[]"
 
     var_decl: TYPE "[" NUMBER? "]" IDENTIFIER -> array_decl_type
             | TYPE IDENTIFIER                  -> simple_decl_type
@@ -71,7 +72,7 @@ def asm_expression(e, local_vars):
     if e.data == "var":
         var_name = e.children[0].value
         if var_name in local_vars:
-            offset = local_vars[var_name]
+            offset = local_vars[var_name]["off"]
             return f"mov rax, [rbp{offset}]"
         elif var_name in env:
             return f"mov rax, [{var_name}]"
@@ -84,7 +85,7 @@ def asm_expression(e, local_vars):
 
         # Get the base address of the array (it's a pointer)
         if name in local_vars:
-            base_addr_location = f"[rbp{local_vars[name]}]"
+            base_addr_location = f"[rbp{local_vars[name]['off']}]"
         elif name in env:
             base_addr_location = f"[{name}]"
         else:
@@ -139,27 +140,44 @@ def asm_commande(c, local_vars, func_name):
     global cpt
 
     if c.data == "declaration":
+        var_type = c.children[0].value
         var_name = c.children[1].value
+        if var_type != type_expression(c.children[2], env):
+            raise TypeError(
+                f"Incompatibilité de type pour la déclaration de '{var_name}'."
+            )
         offset = -(8 * (1 + len(local_vars)))
-        local_vars[var_name] = offset
+        local_vars[var_name] = {'off': offset, 'type': var_type}
+        env[var_name] = {"type": var_type}
         exp_asm = asm_expression(c.children[2], local_vars)
         return f"""
     {exp_asm}
     mov [rbp{offset}], rax  ; local var {var_name}
 """
     if c.data == "array_declaration":
+        var_type = c.children[0].value
         arr_name = c.children[2].value
         size_expr = c.children[1]
 
+        if not isinstance(size_expr.children[0], int):
+            raise TypeError("Le nombre d'éléments du tableau doit être un entier.")
+
+        if var_type == "int":
+            size = 32
+        elif var_type == "char*":
+            size = 8
+            
         # Create a local variable for the *pointer* to the array
         offset = -(8 * (1 + len(local_vars)))
-        local_vars[arr_name] = offset
+        local_vars[arr_name] = {'off': offset, 'type': var_type}
+        env[arr_name] = {"type": f"{var_type}[]", 'size': size_expr}
+        type_commande(c, env)
 
         return f"""
     ; Allocate memory for array '{arr_name}'
     {asm_expression(size_expr, local_vars)}
     mov rdi, rax             ; Number of elements
-    mov rax, 8               ; Size of each element (int or pointer)
+    mov rax, {size}          ; Size of each element (int or pointer)
     imul rdi, rax            ; Total bytes
     call malloc
     mov [rbp{offset}], rax    ; Store pointer in local variable '{arr_name}'
@@ -167,14 +185,22 @@ def asm_commande(c, local_vars, func_name):
     if c.data == "array_declaration_init":
         arr_name = c.children[2].value
         size_expr = c.children[1]
+        var_type = c.children[0].value
         offset = -(8 * (1 + len(local_vars)))
-        local_vars[arr_name] = offset
+        local_vars[arr_name] = {'off': offset, 'type': var_type}
+        env[arr_name] = {"type": f"{var_type}[]", 'size': size_expr}
+        type_commande(c, env)
+
+        if var_type == "int":
+            size = 8
+        elif var_type == "char*":
+            size = 8
 
         code = f"""
     ; Allocate memory for array '{arr_name}'
     {asm_expression(size_expr, local_vars)}
     mov rdi, rax
-    mov rax, 8
+    mov rax, {size}
     imul rdi, rax
     call malloc
     mov [rbp{offset}], rax
@@ -185,7 +211,7 @@ def asm_commande(c, local_vars, func_name):
     ; Initialize {arr_name}[{i}]
     {asm_expression(val_expr, local_vars)}
     mov rbx, [rbp{offset}]
-    mov [rbx + {i*8}], rax
+    mov [rbx + {i*size}], rax
 """
         return code
 
@@ -193,7 +219,7 @@ def asm_commande(c, local_vars, func_name):
         var_name = c.children[0].value
         exp_asm = asm_expression(c.children[1], local_vars)
         if var_name in local_vars:
-            offset = local_vars[var_name]
+            offset = local_vars[var_name]["off"]
             return f"{exp_asm}\nmov [rbp{offset}], rax"
         elif var_name in env:
             return f"{exp_asm}\nmov [{var_name}], rax"
@@ -208,7 +234,7 @@ def asm_commande(c, local_vars, func_name):
             raise NameError(f"Array '{arr_name}' not defined.")
 
         base_addr_location = (
-            f"[rbp{local_vars[arr_name]}]"
+            f"[rbp{local_vars[arr_name]["off"]}]"
             if arr_name in local_vars
             else f"[{arr_name}]"
         )
@@ -225,6 +251,10 @@ def asm_commande(c, local_vars, func_name):
 
     if c.data == "return_statement":
         exp_asm = asm_expression(c.children[0], local_vars)
+        if env[func_name]["return_type"] != type_expression(c.children[0], local_vars):
+            raise TypeError(
+                f"Type de retour incorrect pour '{func_name}': attendu {env[func_name]['return_type']}, obtenu {type_expression(c.children[0], local_vars)}."
+            )
         return f"""
     {exp_asm}
     jmp {func_name}_epilogue
@@ -235,7 +265,7 @@ def asm_commande(c, local_vars, func_name):
         cond_expr = c.children[3]
         body_block = c.children[5]
         offset = -(8 * (1 + len(local_vars)))
-        local_vars[loop_var] = offset
+        local_vars[loop_var] = {'off': offset, 'type': 'int'}
         body_asm = ""
         for cmd in body_block.children:
             body_asm += asm_commande(cmd, local_vars, func_name)
@@ -338,7 +368,7 @@ def asm_function(f):
     params_tree = f.children[1].children
     block_node = f.children[2]
 
-    env[func_name] = {"type": "function"}
+    env[func_name] = {"type": "function", 'params': []}
     local_vars = {}
     arg_registers = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
 
@@ -350,12 +380,18 @@ def asm_function(f):
     sub rsp, 256
 """
     for i, param_decl in enumerate(params_tree):
+        param_type = param_decl.children[0].value
+        if param_decl.data == "array_decl_type":
+            env[func_name]["params"].append(f"{param_type}[]")
+        else:
+            env[func_name]["params"].append(param_type)
         param_name = param_decl.children[-1].value
         offset = -(8 * (1 + len(local_vars)))
-        local_vars[param_name] = offset
+        local_vars[param_name] = {'off': offset, 'type': param_type}
         asm_code += (
             f"    mov [rbp{offset}], {arg_registers[i]} ; Save param '{param_name}'\n"
         )
+    env[func_name]["return_type"] = type_expression(return_type_decl, local_vars)
     for cmd in block_node.children:
         asm_code += asm_commande(cmd, local_vars, func_name) + "\n"
     asm_code += f"""
@@ -375,14 +411,14 @@ def asm_program(p):
             functions_asm += asm_function(child)
         elif child.data == "main":
             main_node = child
-
     main_params = main_node.children[1].children
     main_block = main_node.children[2]
     decl_vars = ""
     init_vars = ""
     for i, param in enumerate(main_params):
         var_name = param.children[1].value
-        env[var_name] = {"type": "global_var"}
+        var_type = param.children[0].value
+        env[var_name] = {"type": var_type}  #{"type": "global_var"}
         decl_vars += f"{var_name}: dq 0\n"
         init_vars += f"""
     mov rdi, [argv_ptr]
@@ -392,9 +428,10 @@ def asm_program(p):
 """
     main_local_vars = {}
     main_commande_asm = ""
+    env["main"] = {"type": "function", 'params': [], 'return_type': main_node.children[0]}
     for cmd in main_block.children:
         main_commande_asm += asm_commande(cmd, main_local_vars, "main")
-
+        #type_commande(cmd, env)
     with open("moule.asm") as f:
         prog_asm = f.read()
 
@@ -527,6 +564,7 @@ if __name__ == "__main__":
     with open("test.c") as f:
         src = f.read()
     ast = g.parse(src)
+    print(ast)
 
     print("--- Pretty-Printed Source ---")
     print(pp_program(ast))
