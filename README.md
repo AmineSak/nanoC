@@ -142,44 +142,33 @@ int factorial(int n) {
 
 ---
 
-## Les `char *`
+## Les `char ` et `char *`
 
-Notre compilateur gère le type `char *`, ainsi que plusieurs opérations courantes comme la concaténation de chaînes, l’indexation, le calcul de longueur, ou encore la conversion d'une chaîne en entier.
-
-Voici un exemple qui montre ce que le compilateur peut gérer :
+Le programme-test si dessous illustre, en quelques lignes, l’ensemble des primitives que notre compilateur sait déjà transformer en assembleur : déclaration et affectation de caractères (char C = 'A') ; création d’une chaîne littérale et d’un pointeur vers celle-ci (char *S = "960BNK"), puis extraction d’un caractère individuel par indexation (t = S[3], soit le 'B' de « 960BNK ») ; concaténation de chaînes avec l’opérateur + (a = S + S, donnant « 960BNK960BNK ») ; appel des fonctions intégrées len (longueur = 6) et atoi (conversion ASCII→entier, donnant 960). Enfin, six appels successifs à printf démontrent la gestion automatique des formats : impression d’un caractère, d’une chaîne, d’un caractère extrait, d’une chaîne résultant d’une concaténation, puis d’un entier produit par len et d’un entier produit par atoi. 
 
 ```c
-main(S) {
- char *S = "123Bonjour";
- M = S + S;
- K = S[5];
- L = len(S);
- A = atoi(S);
+main() {
+    char C = 'A';
+    char *S="960BNK";
+    char t;
+    t = S[3];
+    a= S+S;
+    L=len(S);
+    K=atoi(S);
 
- printf(M);
- printf(K);
- printf(L);
- printf(A);
+    
+    printf(C);
+    printf(S);
+    printf(t);
+    printf(a);
+    printf(L);
+    printf(K)
+    
 }
 ```
 
-L'exécution de ce code produira la sortie suivante :
-
-```
-123Bonjour123Bonjour
-o
-10
-123
-```
-
-Dans ce code, on déclare une variable `S` contenant la chaîne "123Bonjour". Ensuite :
-
-- `M = S + S;` effectue une concaténation. Cette opération est gérée via une fonction assembleur `strcat_custom` qui alloue dynamiquement l'espace mémoire nécessaire.
-- `K = S[5];` accède au caractère d’indice 5 dans la chaîne, ici 'o', et le stocke dans une variable.
-- `L = len(S);` utilise la fonction `strlen` pour calculer la longueur de la chaîne (10).
-- `A = atoi(S);` convertit le début numérique de la chaîne ("123") en entier (123).
-
-Les `printf` s’adaptent automatiquement selon le type de la valeur à afficher : `%s` pour les chaînes, `%c` pour les caractères, et `%d` pour les entiers. Ce programme est entièrement compilable grâce à la structure générée : section `.data`, gestion mémoire, et appels aux fonctions C standard (`printf`, `malloc`, `strlen`, `strcpy`, etc.).
+Le compilateur est implémenté dans charCode.py ; ce script traduit le langage source en assembleur en s’appuyant sur le gabarit char_moule.asm, puis le code généré est appelé depuis la fonction main de char_main.c pour produire l’exécutable final.
+Nous n’avons pas encore relié le type char aux fonctions ni aux tableaux : associer correctement le typage, la gestion d’adressage (char*), la pile d’appels et les offsets des arguments s’est révélé nettement plus ardu que prévu. En l’état, la logique qui pilote déjà les caractères simples et les chaînes devenait trop complexe pour rester cohérente avec le reste du projet ; nous avons donc choisi de stabiliser d’abord les opérations élémentaires (char, char*, concaténation, indexation) avant d’étendre le support aux paramètres de fonction et aux listes.
 
 ---
 
