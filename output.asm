@@ -5,7 +5,12 @@ section .data
     fmt_int:  db "%ld", 10, 0   ; Use %ld for 64-bit integers
     argv_ptr: dq 0
 
-                       ; Placeholder for global variables
+    sum_array: dq 0
+fib: dq 0
+main: dq 0
+my_arr: dq 0
+total: dq 0
+                   ; Placeholder for global variables
 
 section .text
 global main
@@ -88,6 +93,15 @@ fib:
     mov [rbp-24], rsi ; Save param 'memo'
 
     
+    mov rax, 2
+    mov rbx, rax                     ; rbx holds the index
+    mov rax, [rbp-24]    ; rax holds the base pointer
+    mov rax, [rax + rbx * 8]         ; Access the element (8 bytes for int/pointer)
+
+    mov [rbp-32], rax  ; local var i
+
+
+    
     mov rax, 1
     push rax
     mov rax, [rbp-16]
@@ -156,7 +170,32 @@ main:
     ; Save command line arguments pointer
     mov [argv_ptr], rsi
 
-                       ; Placeholder for initializing main's parameters from argv
+    
+    mov rdi, [argv_ptr]
+    mov rdi, [rdi + 8]
+    call atoi
+    mov [sum_array], rax
+
+    mov rdi, [argv_ptr]
+    mov rdi, [rdi + 16]
+    call atoi
+    mov [fib], rax
+
+    mov rdi, [argv_ptr]
+    mov rdi, [rdi + 24]
+    call atoi
+    mov [main], rax
+
+    mov rdi, [argv_ptr]
+    mov rdi, [rdi + 32]
+    call atoi
+    mov [my_arr], rax
+
+    mov rdi, [argv_ptr]
+    mov rdi, [rdi + 40]
+    call atoi
+    mov [total], rax
+                   ; Placeholder for initializing main's parameters from argv
     
     
     ; Allocate memory for array 'my_arr'
@@ -165,69 +204,69 @@ main:
     mov rax, 8
     imul rdi, rax
     call malloc
-    mov [rbp-8], rax
+    mov [my_arr], rax
 
     ; Initialize my_arr[0]
     mov rax, 10
-    mov rbx, [rbp-8]
+    mov rbx, [my_arr]
     mov [rbx + 0], rax
 
     ; Initialize my_arr[1]
     mov rax, 20
-    mov rbx, [rbp-8]
+    mov rbx, [my_arr]
     mov [rbx + 8], rax
 
     ; Initialize my_arr[2]
     mov rax, 30
-    mov rbx, [rbp-8]
+    mov rbx, [my_arr]
     mov [rbx + 16], rax
 
     ; Initialize my_arr[3]
     mov rax, 40
-    mov rbx, [rbp-8]
+    mov rbx, [my_arr]
     mov [rbx + 24], rax
 
     ; Initialize my_arr[4]
     mov rax, 50
-    mov rbx, [rbp-8]
+    mov rbx, [my_arr]
     mov [rbx + 32], rax
 
     ; Initialize my_arr[5]
     mov rax, 60
-    mov rbx, [rbp-8]
+    mov rbx, [my_arr]
     mov [rbx + 40], rax
 
     ; Initialize my_arr[6]
     mov rax, 70
-    mov rbx, [rbp-8]
+    mov rbx, [my_arr]
     mov [rbx + 48], rax
 
     ; Initialize my_arr[7]
     mov rax, 80
-    mov rbx, [rbp-8]
+    mov rbx, [my_arr]
     mov [rbx + 56], rax
 
     ; Initialize my_arr[8]
     mov rax, 90
-    mov rbx, [rbp-8]
+    mov rbx, [my_arr]
     mov [rbx + 64], rax
 
     ; Initialize my_arr[9]
     mov rax, 100
-    mov rbx, [rbp-8]
+    mov rbx, [my_arr]
     mov [rbx + 72], rax
 
-    mov rax, [rbp-8]
+    mov rax, [my_arr]
 push rax
 pop rdi
 call sum_array
 
-    mov [rbp-16], rax  ; local var total
+    mov [total], rax  ; local var total
 
     
     mov rax, 500
     push rax
-    mov rax, [rbp-16]
+    mov rax, [total]
     pop rbx
     cmp rax, rbx
 setg al
@@ -253,7 +292,7 @@ else2:
 
 endif2: nop
 
-    mov rax, [rbp-16]
+    mov rax, [total]
     mov rsi, rax
     mov rdi, fmt_int
     xor rax, rax
@@ -261,7 +300,7 @@ endif2: nop
 
     mov rax, 7
 push rax
-mov rax, [rbp-8]
+mov rax, [my_arr]
 push rax
 pop rdi
 pop rsi

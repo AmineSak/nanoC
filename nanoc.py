@@ -142,9 +142,12 @@ def asm_expression(e, local_vars):
     if e.data == "var":
         var_name = e.children[0].value
         if var_name in local_vars:
-            offset = local_vars[var_name]["off"]
-            return f"mov rax, [rbp{offset}]"
-        elif var_name in env:
+            try:
+                offset = local_vars[var_name]["off"]
+                return f"mov rax, [rbp{offset}]"
+            except:
+                None
+        if var_name in env:
             return f"mov rax, [{var_name}]"
         else:
             raise NameError(f"Variable '{var_name}' not defined.")
@@ -212,21 +215,30 @@ def asm_commande(c, local_vars, func_name):
     if c.data == "declaration":
         var_type = c.children[0].value
         var_name = c.children[1].value
-        if var_type != type_expression(c.children[2], env):
-            print(env)
-            print(c.children[2])
-            print(type_expression(c.children[2], env))
-            raise TypeError(
-                f"Incompatibilité de type pour la déclaration de '{var_name}'."
-            )
-        offset = -(8 * (1 + len(local_vars)))
-        local_vars[var_name] = {'off': offset, 'type': var_type}
-        env[var_name] = {"type": var_type}
-        exp_asm = asm_expression(c.children[2], local_vars)
-        return f"""
+        if func_name != 'main':
+            if var_type != type_expression(c.children[2], local_vars):
+                raise TypeError(
+                    f"Incompatibilité de type pour la déclaration de '{var_name}'."
+                )
+            offset = -(8 * (1 + len(local_vars)))
+            local_vars[var_name] = {'off': offset, 'type': var_type}
+            exp_asm = asm_expression(c.children[2], local_vars)
+            return f"""
     {exp_asm}
     mov [rbp{offset}], rax  ; local var {var_name}
 """
+        else:    
+            if var_type != type_expression(c.children[2], env):
+                raise TypeError(
+                    f"Incompatibilité de type pour la déclaration de '{var_name}'."
+                )
+            env[var_name] = {"type": var_type}
+            exp_asm = asm_expression(c.children[2], env)
+            return f"""
+    {exp_asm}
+    mov [{var_name}], rax  ; local var {var_name}
+""" 
+        
     if c.data == "array_declaration":
         var_type = c.children[0].value
         arr_name = c.children[2].value
@@ -240,13 +252,24 @@ def asm_commande(c, local_vars, func_name):
         elif var_type == "char*":
             size = 8
             
-        # Create a local variable for the *pointer* to the array
-        offset = -(8 * (1 + len(local_vars)))
-        local_vars[arr_name] = {'off': offset, 'type': var_type}
-        env[arr_name] = {"type": f"{var_type}[]", 'size': size_expr}
-        type_commande(c, env)
-
-        return f"""
+        if func_name == 'main':
+            env[arr_name] = {"type": f"{var_type}[]", 'size': size_expr}
+            type_commande(c, env)
+            return f"""
+    ; Allocate memory for array '{arr_name}'
+    {asm_expression(size_expr, env)}
+    mov rdi, rax             ; Number of elements
+    mov rax, {size}          ; Size of each element (int or pointer)
+    imul rdi, rax            ; Total bytes
+    call malloc
+    mov [{arr_name}], rax    ; Store pointer in local variable '{arr_name}'
+"""
+        else:
+            # Create a local variable for the *pointer* to the array
+            offset = -(8 * (1 + len(local_vars)))
+            local_vars[arr_name] = {'off': offset, 'type': var_type}
+            type_commande(c, local_vars)
+            return f"""
     ; Allocate memory for array '{arr_name}'
     {asm_expression(size_expr, local_vars)}
     mov rdi, rax             ; Number of elements
@@ -255,22 +278,42 @@ def asm_commande(c, local_vars, func_name):
     call malloc
     mov [rbp{offset}], rax    ; Store pointer in local variable '{arr_name}'
 """
+        
     if c.data == "array_declaration_init":
         arr_name = c.children[2].value
         size_expr = c.children[1]
         var_type = c.children[0].value
-        offset = -(8 * (1 + len(local_vars)))
-        local_vars[arr_name] = {'off': offset, 'type': var_type}
-        env[arr_name] = {"type": f"{var_type}[]", 'size': size_expr.children[0].value}
-        print(env)
-        type_commande(c, env)
-
         if var_type == "int":
             size = 8
         elif var_type == "char*":
             size = 8
 
-        code = f"""
+        if func_name == 'main':
+            env[arr_name] = {"type": f"{var_type}[]", 'size': size_expr.children[0].value}
+            type_commande(c, env)
+            code = f"""
+    ; Allocate memory for array '{arr_name}'
+    {asm_expression(size_expr, env)}
+    mov rdi, rax
+    mov rax, {size}
+    imul rdi, rax
+    call malloc
+    mov [{arr_name}], rax
+"""
+            liste_values_node = c.children[3]
+            for i, val_expr in enumerate(liste_values_node.children):
+                code += f"""
+    ; Initialize {arr_name}[{i}]
+    {asm_expression(val_expr, env)}
+    mov rbx, [{arr_name}]
+    mov [rbx + {i*size}], rax
+"""
+            return code            
+        else:
+            offset = -(8 * (1 + len(local_vars)))
+            local_vars[arr_name] = {'off': offset, 'type': var_type}
+            type_commande(c, local_vars)
+            code = f"""
     ; Allocate memory for array '{arr_name}'
     {asm_expression(size_expr, local_vars)}
     mov rdi, rax
@@ -279,26 +322,30 @@ def asm_commande(c, local_vars, func_name):
     call malloc
     mov [rbp{offset}], rax
 """
-        liste_values_node = c.children[3]
-        for i, val_expr in enumerate(liste_values_node.children):
-            code += f"""
+            liste_values_node = c.children[3]
+            for i, val_expr in enumerate(liste_values_node.children):
+                code += f"""
     ; Initialize {arr_name}[{i}]
     {asm_expression(val_expr, local_vars)}
     mov rbx, [rbp{offset}]
     mov [rbx + {i*size}], rax
 """
-        return code
+            return code
 
     if c.data == "affectation":
         var_name = c.children[0].value
-        exp_asm = asm_expression(c.children[1], local_vars)
-        if var_name in local_vars:
+        if func_name != 'main':
+            if var_name not in local_vars:
+                raise NameError(f"Variable '{var_name}' not defined.")
+            exp_asm = asm_expression(c.children[1], local_vars)
             offset = local_vars[var_name]["off"]
             return f"{exp_asm}\nmov [rbp{offset}], rax"
         elif var_name in env:
+            if var_name not in env:
+                raise NameError(f"Variable '{var_name}' not defined.")
+            exp_asm = asm_expression(c.children[1], env)
             return f"{exp_asm}\nmov [{var_name}], rax"
-        else:
-            raise NameError(f"Variable '{var_name}' not defined.")
+            
 
     if c.data == "arr_affectation":
         arr_name = c.children[0].value
@@ -306,14 +353,15 @@ def asm_commande(c, local_vars, func_name):
         val_expr = c.children[2]
         if arr_name not in local_vars and arr_name not in env:
             raise NameError(f"Array '{arr_name}' not defined.")
+        
+        if func_name != 'main':
+            base_addr_location = (
+                f"[rbp{local_vars[arr_name]["off"]}]"
+                if arr_name in local_vars
+                else f"[{arr_name}]"
+            )
 
-        base_addr_location = (
-            f"[rbp{local_vars[arr_name]["off"]}]"
-            if arr_name in local_vars
-            else f"[{arr_name}]"
-        )
-
-        return f"""
+            return f"""
     {asm_expression(val_expr, local_vars)}
     push rax
     {asm_expression(idx_expr, local_vars)}
@@ -322,15 +370,39 @@ def asm_commande(c, local_vars, func_name):
     mov rcx, {base_addr_location}
     mov [rcx + rbx * 8], rax
 """
+        else:
+            base_addr_location = (
+                f"[{arr_name}]"
+            )
+
+            return f"""
+    {asm_expression(val_expr, env)}
+    push rax
+    {asm_expression(idx_expr, env)}
+    mov rbx, rax
+    pop rax
+    mov rcx, {base_addr_location}
+    mov [rcx + rbx * 8], rax
+"""
 
     if c.data == "return_statement":
-        exp_asm = asm_expression(c.children[0], local_vars)
-        print(local_vars)
-        if env[func_name]["return_type"] != type_expression(c.children[0], local_vars):
-            raise TypeError(
-                f"Type de retour incorrect pour '{func_name}': attendu {env[func_name]['return_type']}, obtenu {type_expression(c.children[0], local_vars)}."
-            )
-        return f"""
+        if func_name != 'main':
+            exp_asm = asm_expression(c.children[0], local_vars)
+            if env[func_name]["return_type"] != type_expression(c.children[0], local_vars):
+                raise TypeError(
+                    f"Type de retour incorrect pour '{func_name}': attendu {env[func_name]['return_type']}, obtenu {type_expression(c.children[0], local_vars)}."
+                )
+            return f"""
+    {exp_asm}
+    jmp {func_name}_epilogue
+"""
+        else:
+            exp_asm = asm_expression(c.children[0], env)
+            if env[func_name]["return_type"] != type_expression(c.children[0], env):
+                raise TypeError(
+                    f"Type de retour incorrect pour '{func_name}': attendu {env[func_name]['return_type']}, obtenu {type_expression(c.children[0], env)}."
+                )
+            return f"""
     {exp_asm}
     jmp {func_name}_epilogue
 """
@@ -496,10 +568,19 @@ def asm_program(p):
     main_block = main_node.children[2]
     decl_vars = ""
     init_vars = ""
+    """
     for i, param in enumerate(main_params):
         var_name = param.children[1].value
         var_type = param.children[0].value
-        env[var_name] = {"type": var_type}  #{"type": "global_var"}
+        env[var_name] = {"type": var_type}  #{"type": "global_var"}"""
+    main_local_vars = {}
+    main_commande_asm = ""
+    env["main"] = {"type": "function", 'params': [], 'return_type': main_node.children[0]}
+    for cmd in main_block.children:
+        main_commande_asm += asm_commande(cmd, env, "main")
+        #type_commande(cmd, env)
+    print(env)
+    for i,var_name in enumerate(env):
         decl_vars += f"{var_name}: dq 0\n"
         init_vars += f"""
     mov rdi, [argv_ptr]
@@ -507,12 +588,6 @@ def asm_program(p):
     call atoi
     mov [{var_name}], rax
 """
-    main_local_vars = {}
-    main_commande_asm = ""
-    env["main"] = {"type": "function", 'params': [], 'return_type': main_node.children[0]}
-    for cmd in main_block.children:
-        main_commande_asm += asm_commande(cmd, main_local_vars, "main")
-        #type_commande(cmd, env)
     with open("moule.asm") as f:
         prog_asm = f.read()
 

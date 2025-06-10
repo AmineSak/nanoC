@@ -10,6 +10,7 @@ int sum_array(int[10] arr) {
 }
 
 int fib(int n, int[10] memo) {
+    int i = memo[2];
     if (n <= 1) { 
         return(n);
     }
