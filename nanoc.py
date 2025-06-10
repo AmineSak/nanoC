@@ -158,9 +158,11 @@ def asm_expression(e, local_vars):
 
         # Get the base address of the array (it's a pointer)
         if name in local_vars:
-            base_addr_location = f"[rbp{local_vars[name]['off']}]"
-        elif name in env:
-            base_addr_location = f"[{name}]"
+            try:
+                base_addr_location = f"[rbp{local_vars[name]['off']}]"
+            except:
+                if name in env:
+                    base_addr_location = f"[{name}]"
         else:
             raise NameError(f"Array '{name}' not defined.")
 
@@ -243,10 +245,10 @@ def asm_commande(c, local_vars, func_name):
         var_type = c.children[0].value
         arr_name = c.children[2].value
         size_expr = c.children[1]
-
+        """
         if not isinstance(size_expr.children[0], int):
             raise TypeError("Le nombre d'éléments du tableau doit être un entier.")
-
+        """
         if var_type == "int":
             size = 32
         elif var_type == "char*":
@@ -575,14 +577,16 @@ def asm_program(p):
         env[var_name] = {"type": var_type}  #{"type": "global_var"}"""
     main_local_vars = {}
     main_commande_asm = ""
-    env["main"] = {"type": "function", 'params': [], 'return_type': main_node.children[0]}
+    env["main"] = {"type": "function", 'params': [], 'return_type': main_node.children[0].value}
     for cmd in main_block.children:
         main_commande_asm += asm_commande(cmd, env, "main")
         #type_commande(cmd, env)
     print(env)
     for i,var_name in enumerate(env):
-        decl_vars += f"{var_name}: dq 0\n"
-        init_vars += f"""
+        if env[var_name]["type"] != "function":
+            env[var_name] = {"type": "global_var"}
+            decl_vars += f"{var_name}: dq 0\n"
+            init_vars += f"""
     mov rdi, [argv_ptr]
     mov rdi, [rdi + {(i+1)*8}]
     call atoi
@@ -717,7 +721,7 @@ def pp_program(p):
 
 
 if __name__ == "__main__":
-    with open("test.c") as f:
+    with open("test1.c") as f:
         src = f.read()
     ast = g.parse(src)
     print(ast)

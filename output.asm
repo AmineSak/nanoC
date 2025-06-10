@@ -5,160 +5,15 @@ section .data
     fmt_int:  db "%ld", 10, 0   ; Use %ld for 64-bit integers
     argv_ptr: dq 0
 
-    sum_array: dq 0
-fib: dq 0
-main: dq 0
-my_arr: dq 0
-total: dq 0
+    t1: dq 0
+t2: dq 0
+s: dq 0
+i: dq 0
                    ; Placeholder for global variables
 
 section .text
 global main
 
-
-; --- Function: sum_array ---
-sum_array:
-    push rbp
-    mov rbp, rsp
-    sub rsp, 256
-    mov [rbp-16], rdi ; Save param 'arr'
-
-    mov rax, 0
-    mov [rbp-24], rax  ; local var s
-
-
-    ; For loop init
-    mov rax, 0
-    mov [rbp-32], rax
-for_loop_0:
-    ; For loop condition
-    
-    mov rax, 10
-    push rax
-    mov rax, [rbp-32]
-    pop rbx
-    cmp rax, rbx
-setl al
-movzx rax, al
-
-    cmp rax, 0
-    jz for_end_0
-    ; For loop body
-    
-    
-    mov rax, [rbp-32]
-    mov rbx, rax                     ; rbx holds the index
-    mov rax, [rbp-16]    ; rax holds the base pointer
-    mov rax, [rax + rbx * 8]         ; Access the element (8 bytes for int/pointer)
-
-    push rax
-    mov rax, [rbp-24]
-    pop rbx
-    add rax, rbx
-
-mov [rbp-24], rax
-    
-    mov rax, [rbp-32]
-    mov rbx, rax                     ; rbx holds the index
-    mov rax, [rbp-16]    ; rax holds the base pointer
-    mov rax, [rax + rbx * 8]         ; Access the element (8 bytes for int/pointer)
-
-    mov rsi, rax
-    mov rdi, fmt_int
-    xor rax, rax
-    call printf
-
-    ; For loop increment
-    inc qword [rbp-32]
-    jmp for_loop_0
-for_end_0:
-    nop
-
-
-    mov rax, [rbp-24]
-    jmp sum_array_epilogue
-
-
-sum_array_epilogue:
-    mov rsp, rbp
-    pop rbp
-    ret
-
-; --- Function: fib ---
-fib:
-    push rbp
-    mov rbp, rsp
-    sub rsp, 256
-    mov [rbp-16], rdi ; Save param 'n'
-    mov [rbp-24], rsi ; Save param 'memo'
-
-    
-    mov rax, 2
-    mov rbx, rax                     ; rbx holds the index
-    mov rax, [rbp-24]    ; rax holds the base pointer
-    mov rax, [rax + rbx * 8]         ; Access the element (8 bytes for int/pointer)
-
-    mov [rbp-32], rax  ; local var i
-
-
-    
-    mov rax, 1
-    push rax
-    mov rax, [rbp-16]
-    pop rbx
-    cmp rax, rbx
-setle al
-movzx rax, al
-
-    cmp rax, 0
-    jz endif1
-
-    mov rax, [rbp-16]
-    jmp fib_epilogue
-
-endif1: nop
-
-
-    
-    
-    mov rax, 2
-    push rax
-    mov rax, [rbp-16]
-    pop rbx
-    sub rax, rbx
-
-push rax
-mov rax, [rbp-24]
-push rax
-pop rdi
-pop rsi
-call fib
-
-    push rax
-    
-    mov rax, 1
-    push rax
-    mov rax, [rbp-16]
-    pop rbx
-    sub rax, rbx
-
-push rax
-mov rax, [rbp-24]
-push rax
-pop rdi
-pop rsi
-call fib
-
-    pop rbx
-    add rax, rbx
-
-    jmp fib_epilogue
-
-
-fib_epilogue:
-    mov rsp, rbp
-    pop rbp
-    ret
                        ; Placeholder for all user-defined functions
 
 ; --- Main function entry point ---
@@ -172,146 +27,127 @@ main:
 
     
     mov rdi, [argv_ptr]
-    mov rdi, [rdi + 8]
-    call atoi
-    mov [sum_array], rax
-
-    mov rdi, [argv_ptr]
     mov rdi, [rdi + 16]
     call atoi
-    mov [fib], rax
+    mov [t1], rax
 
     mov rdi, [argv_ptr]
     mov rdi, [rdi + 24]
     call atoi
-    mov [main], rax
+    mov [t2], rax
 
     mov rdi, [argv_ptr]
     mov rdi, [rdi + 32]
     call atoi
-    mov [my_arr], rax
+    mov [s], rax
 
     mov rdi, [argv_ptr]
     mov rdi, [rdi + 40]
     call atoi
-    mov [total], rax
+    mov [i], rax
                    ; Placeholder for initializing main's parameters from argv
     
     
-    ; Allocate memory for array 'my_arr'
-    mov rax, 10
+    ; Allocate memory for array 't1'
+    mov rax, 5
     mov rdi, rax
     mov rax, 8
     imul rdi, rax
     call malloc
-    mov [my_arr], rax
+    mov [t1], rax
 
-    ; Initialize my_arr[0]
+    ; Initialize t1[0]
     mov rax, 10
-    mov rbx, [my_arr]
+    mov rbx, [t1]
     mov [rbx + 0], rax
 
-    ; Initialize my_arr[1]
+    ; Initialize t1[1]
     mov rax, 20
-    mov rbx, [my_arr]
+    mov rbx, [t1]
     mov [rbx + 8], rax
 
-    ; Initialize my_arr[2]
+    ; Initialize t1[2]
     mov rax, 30
-    mov rbx, [my_arr]
+    mov rbx, [t1]
     mov [rbx + 16], rax
 
-    ; Initialize my_arr[3]
+    ; Initialize t1[3]
     mov rax, 40
-    mov rbx, [my_arr]
+    mov rbx, [t1]
     mov [rbx + 24], rax
 
-    ; Initialize my_arr[4]
+    ; Initialize t1[4]
     mov rax, 50
-    mov rbx, [my_arr]
+    mov rbx, [t1]
     mov [rbx + 32], rax
 
-    ; Initialize my_arr[5]
-    mov rax, 60
-    mov rbx, [my_arr]
-    mov [rbx + 40], rax
+    ; Allocate memory for array 't2'
+    mov rax, 5
+    mov rdi, rax             ; Number of elements
+    mov rax, 32          ; Size of each element (int or pointer)
+    imul rdi, rax            ; Total bytes
+    call malloc
+    mov [t2], rax    ; Store pointer in local variable 't2'
 
-    ; Initialize my_arr[6]
-    mov rax, 70
-    mov rbx, [my_arr]
-    mov [rbx + 48], rax
+    mov rax, 0
+    mov [s], rax  ; local var s
 
-    ; Initialize my_arr[7]
-    mov rax, 80
-    mov rbx, [my_arr]
-    mov [rbx + 56], rax
-
-    ; Initialize my_arr[8]
-    mov rax, 90
-    mov rbx, [my_arr]
-    mov [rbx + 64], rax
-
-    ; Initialize my_arr[9]
-    mov rax, 100
-    mov rbx, [my_arr]
-    mov [rbx + 72], rax
-
-    mov rax, [my_arr]
-push rax
-pop rdi
-call sum_array
-
-    mov [total], rax  ; local var total
-
+    ; For loop init
+    mov rax, 0
+    mov [rbp-40], rax
+for_loop_0:
+    ; For loop condition
     
-    mov rax, 500
+    mov rax, 5
     push rax
-    mov rax, [total]
+    mov rax, [rbp-40]
     pop rbx
     cmp rax, rbx
-setg al
+setl al
 movzx rax, al
 
     cmp rax, 0
-    jz else2
+    jz for_end_0
+    ; For loop body
+    
+    
+    mov rax, [rbp-40]
+    mov rbx, rax                     ; rbx holds the index
+    mov rax, [t1]    ; rax holds the base pointer
+    mov rax, [rax + rbx * 8]         ; Access the element (8 bytes for int/pointer)
 
-    mov rax, 1
+    push rax
+    mov rax, [rbp-40]
+    mov rbx, rax
+    pop rax
+    mov rcx, [t2]
+    mov [rcx + rbx * 8], rax
+
+    
+    mov rax, [rbp-40]
+    mov rbx, rax                     ; rbx holds the index
+    mov rax, [t2]    ; rax holds the base pointer
+    mov rax, [rax + rbx * 8]         ; Access the element (8 bytes for int/pointer)
+
+    push rax
+    mov rax, [s]
+    pop rbx
+    add rax, rbx
+
+mov [s], rax
+    ; For loop increment
+    inc qword [rbp-40]
+    jmp for_loop_0
+for_end_0:
+    nop
+
+    mov rax, [s]
     mov rsi, rax
     mov rdi, fmt_int
     xor rax, rax
     call printf
 
-    jmp endif2
-else2:
-
-    mov rax, 0
-    mov rsi, rax
-    mov rdi, fmt_int
-    xor rax, rax
-    call printf
-
-endif2: nop
-
-    mov rax, [total]
-    mov rsi, rax
-    mov rdi, fmt_int
-    xor rax, rax
-    call printf
-
-    mov rax, 7
-push rax
-mov rax, [my_arr]
-push rax
-pop rdi
-pop rsi
-call fib
-
-    mov rsi, rax
-    mov rdi, fmt_int
-    xor rax, rax
-    call printf
-
-    mov rax, 0
+    mov rax, [s]
     jmp main_epilogue
                     ; Placeholder for main's body
     

@@ -29,6 +29,6 @@ int main() {
 
     
     printf(total);
-    printf(fib(7, my_arr));
+    printf(fib(1, my_arr));
     return(0);
 }
