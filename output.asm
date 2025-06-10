@@ -85,6 +85,7 @@ fib:
     mov rbp, rsp
     sub rsp, 256
     mov [rbp-16], rdi ; Save param 'n'
+    mov [rbp-24], rsi ; Save param 'memo'
 
     
     mov rax, 1
@@ -113,7 +114,10 @@ endif1: nop
     sub rax, rbx
 
 push rax
+mov rax, [rbp-24]
+push rax
 pop rdi
+pop rsi
 call fib
 
     push rax
@@ -125,7 +129,10 @@ call fib
     sub rax, rbx
 
 push rax
+mov rax, [rbp-24]
+push rax
 pop rdi
+pop rsi
 call fib
 
     pop rbx
@@ -254,7 +261,10 @@ endif2: nop
 
     mov rax, 7
 push rax
+mov rax, [rbp-8]
+push rax
 pop rdi
+pop rsi
 call fib
 
     mov rsi, rax

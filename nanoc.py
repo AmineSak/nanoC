@@ -325,6 +325,7 @@ def asm_commande(c, local_vars, func_name):
 
     if c.data == "return_statement":
         exp_asm = asm_expression(c.children[0], local_vars)
+        print(local_vars)
         if env[func_name]["return_type"] != type_expression(c.children[0], local_vars):
             raise TypeError(
                 f"Type de retour incorrect pour '{func_name}': attendu {env[func_name]['return_type']}, obtenu {type_expression(c.children[0], local_vars)}."
@@ -456,15 +457,17 @@ def asm_function(f):
 """
     for i, param_decl in enumerate(params_tree):
         param_type = param_decl.children[0].value
+        param_name = param_decl.children[-1].value        
         if param_decl.data == "array_decl_type":
             env[func_name]["params"].append(f"{param_type}[]")
             local_vars[func_name]["params"].append(f"{param_type}[]")
+            offset = -(8 * (1 + len(local_vars)))
+            local_vars[param_name] = {'off': offset, 'type': f"{param_type}[]"}
         else:
             env[func_name]["params"].append(param_type)
             local_vars[func_name]["params"].append(param_type)
-        param_name = param_decl.children[-1].value
-        offset = -(8 * (1 + len(local_vars)))
-        local_vars[param_name] = {'off': offset, 'type': param_type}
+            offset = -(8 * (1 + len(local_vars)))
+            local_vars[param_name] = {'off': offset, 'type': param_type}
         asm_code += (
             f"    mov [rbp{offset}], {arg_registers[i]} ; Save param '{param_name}'\n"
         )

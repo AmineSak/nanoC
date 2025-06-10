@@ -9,11 +9,11 @@ int sum_array(int[10] arr) {
     return(s);
 }
 
-int fib(int n) {
+int fib(int n, int[10] memo) {
     if (n <= 1) { 
         return(n);
     }
-    return(fib(n - 1) + fib(n - 2));
+    return(fib(n - 1, memo) + fib(n - 2, memo));
 }
 
 int main() {
@@ -28,6 +28,6 @@ int main() {
 
     
     printf(total);
-    printf(fib(7));
+    printf(fib(7, my_arr));
     return(0);
 }
