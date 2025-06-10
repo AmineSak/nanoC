@@ -176,6 +176,8 @@ def asm_expression(e, local_vars):
 
     if e.data == "opbin":
         if type_expression(e.children[0], env) == "char*" or type_expression(e.children[0], env) == "char":
+            if e.children[1].value != "+":
+                raise TypeError("Opération non supportée pour les char* ou char.")
             type_commande(e, env)
             None
         else:
