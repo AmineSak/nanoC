@@ -6,9 +6,14 @@ int recurs(int n) {
     return(n + recurs(n - 1));
 }
 
+
+
+
 int main() {
-    int a = 12;
-    int result = recurs(a);
-    printf(result); 
+    int[6] tab = {1,2,4,5,6,8};
+    for (int i = 0; i < 5; i++){
+    int val = tab[i];
+    printf(val);}
+    
     return(0);      
 }
