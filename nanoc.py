@@ -24,6 +24,7 @@ g = Lark(
     liste_values: expression ("," expression)* -> liste_values
 
     expression: IDENTIFIER "[" expression "]" -> arr_access
+        | IDENTIFIER "{" NUMBER "}"      -> char_access
         | IDENTIFIER                -> var
         | NUMBER                          -> number
         | STRING                          -> string_expr
@@ -174,6 +175,9 @@ def asm_expression(e, local_vars):
     mov rax, [rax + rbx * 8]         ; Access the element (8 bytes for int/pointer)
 """
 
+    if e.data == "char_access":
+        None
+
     if e.data == "opbin":
         if type_expression(e.children[0], env) == "char*" or type_expression(e.children[0], env) == "char":
             if e.children[1].value != "+":
@@ -233,20 +237,21 @@ def asm_commande(c, local_vars, func_name):
         var_type = c.children[0].value
         var_name = c.children[1].value
         if var_type != type_expression(c.children[2], env):
-            print(env)
-            print(c.children[2])
-            print(type_expression(c.children[2], env))
             raise TypeError(
                 f"Incompatibilité de type pour la déclaration de '{var_name}'."
             )
         offset = -(8 * (1 + len(local_vars)))
         local_vars[var_name] = {'off': offset, 'type': var_type}
         env[var_name] = {"type": var_type}
-        exp_asm = asm_expression(c.children[2], local_vars)
-        return f"""
+        if var_type == 'int':
+            exp_asm = asm_expression(c.children[2], local_vars)
+            return f"""
     {exp_asm}
     mov [rbp{offset}], rax  ; local var {var_name}
 """
+        else:
+            exp_asm = asm_expression(c.children[2], local_vars)
+            None
     if c.data == "array_declaration":
         var_type = c.children[0].value
         arr_name = c.children[2].value

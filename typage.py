@@ -35,7 +35,18 @@ def type_expression(e, env):
                 raise TypeError(f"Variable '{var_name}' non déclarée.")
             if env[var_name]['type'] not in ("int[]", "char*[]"):
                 raise TypeError(f"'{var_name}' n'est pas un tableau.")
+            if env[var_name]['size'] < int(e.children[1].value):
+                raise TypeError(f"Index {e.children[1].value} hors limites pour le tableau '{var_name}'.")
             return env[var_name]['type'][0:-2]
+        if e.data == "char_access":
+            var_name = e.children[0].value
+            if var_name not in env:
+                raise TypeError(f"Variable '{var_name}' non déclarée.")
+            if env[var_name]['type'] != "char":
+                raise TypeError(f"'{var_name}' n'est pas une chaîne de caractères.")
+            if env[var_name]['size'] < int(e.children[1].value):
+                raise TypeError(f"Index {e.children[1].value} hors limites pour la chaîne '{var_name}'.")
+            return "char*"
         if e.data == "opbin":
             left_type = type_expression(e.children[0], env)
             right_type = type_expression(e.children[2], env)
