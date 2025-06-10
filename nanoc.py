@@ -213,6 +213,9 @@ def asm_commande(c, local_vars, func_name):
         var_type = c.children[0].value
         var_name = c.children[1].value
         if var_type != type_expression(c.children[2], env):
+            print(env)
+            print(c.children[2])
+            print(type_expression(c.children[2], env))
             raise TypeError(
                 f"Incompatibilité de type pour la déclaration de '{var_name}'."
             )
@@ -258,7 +261,8 @@ def asm_commande(c, local_vars, func_name):
         var_type = c.children[0].value
         offset = -(8 * (1 + len(local_vars)))
         local_vars[arr_name] = {'off': offset, 'type': var_type}
-        env[arr_name] = {"type": f"{var_type}[]", 'size': size_expr}
+        env[arr_name] = {"type": f"{var_type}[]", 'size': size_expr.children[0].value}
+        print(env)
         type_commande(c, env)
 
         if var_type == "int":

@@ -33,9 +33,9 @@ def type_expression(e, env):
             var_name = e.children[0].value
             if var_name not in env:
                 raise TypeError(f"Variable '{var_name}' non déclarée.")
-            if env[var_name] not in ("int[]", "char*[]"):
+            if env[var_name]['type'] not in ("int[]", "char*[]"):
                 raise TypeError(f"'{var_name}' n'est pas un tableau.")
-            return env[var_name]['type']
+            return env[var_name]['type'][0:-2]
         if e.data == "opbin":
             left_type = type_expression(e.children[0], env)
             right_type = type_expression(e.children[2], env)
@@ -43,7 +43,6 @@ def type_expression(e, env):
                 raise TypeError(f"Opération {e.children[1].value} entre types incompatibles : {left_type} et {right_type}.")
             return left_type
         if e.data == "function_call":
-            print(env)
             func_name = e.children[0].value
             if func_name not in env or env[func_name]['type'] != 'function':
                 raise TypeError(f"Fonction '{func_name}' non déclarée ou de type incorrect.")
