@@ -11,6 +11,7 @@ g = Lark(
     """
     IDENTIFIER: /[a-zA-Z_][a-zA-Z0-9_]*/
     NUMBER: /[1-9][0-9]*/ | "0"
+    STRING: /"[^\"]*"/
     OPBIN: "+" | "-" | "*" | "/" | "==" | "!=" | ">" | "<" | ">=" | "<="
     TYPE: "int" | "char" | "char*" | "int[]" | "char*[]"
 
@@ -174,10 +175,15 @@ def asm_expression(e, local_vars):
 """
 
     if e.data == "opbin":
-        left_asm = asm_expression(e.children[0], local_vars)
-        right_asm = asm_expression(e.children[2], local_vars)
-        op = e.children[1].value
-        return f"""
+        if type_expression(e.children[0], env) == "char*" or type_expression(e.children[0], env) == "char":
+            type_commande(e, env)
+            None
+        else:
+            type_commande(e, env)
+            left_asm = asm_expression(e.children[0], local_vars)
+            right_asm = asm_expression(e.children[2], local_vars)
+            op = e.children[1].value
+            return f"""
     {right_asm}
     push rax
     {left_asm}
