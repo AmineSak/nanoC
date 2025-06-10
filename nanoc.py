@@ -12,7 +12,7 @@ g = Lark(
     IDENTIFIER: /[a-zA-Z_][a-zA-Z0-9_]*/
     NUMBER: /[1-9][0-9]*/ | "0"
     OPBIN: "+" | "-" | "*" | "/" | "==" | "!=" | ">" | "<" | ">=" | "<="
-    TYPE: "int" | "char*" | "int[]" | "char*[]"
+    TYPE: "int" | "char" | "char*" | "int[]" | "char*[]"
 
     var_decl: TYPE "[" NUMBER? "]" IDENTIFIER -> array_decl_type
             | TYPE IDENTIFIER                  -> simple_decl_type
@@ -25,6 +25,7 @@ g = Lark(
     expression: IDENTIFIER "[" expression "]" -> arr_access
         | IDENTIFIER                -> var
         | NUMBER                          -> number
+        | STRING                          -> string_expr
         | expression OPBIN expression     -> opbin
         | IDENTIFIER "(" (expression ("," expression)*)? ")" -> function_call
 
@@ -138,6 +139,9 @@ def asm_expression(e, local_vars):
     """Compiles an expression. local_vars is the map of local names to [rbp-offset]."""
     if e.data == "number":
         return f"mov rax, {e.children[0].value}"
+
+    if e.data == "string_expr":
+        None
 
     if e.data == "var":
         var_name = e.children[0].value
