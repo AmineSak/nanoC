@@ -11,59 +11,52 @@ section .text
 global main
 
 
-; --- Function: sum_array ---
-sum_array:
+; --- Function: recurs ---
+recurs:
     push rbp
     mov rbp, rsp
     sub rsp, 256
-    mov [rbp-16], rdi ; Save param 'arr'
+    mov [rbp-16], rdi ; Save param 'n'
 
-    mov rax, 0
-    mov [rbp-24], rax  ; local var s
-
-
-    ; For loop init
-    mov rax, 0
-    mov [rbp-32], rax
-for_loop_0:
-    ; For loop condition
     
     mov rax, 10
     push rax
-    mov rax, [rbp-32]
+    mov rax, [rbp-16]
     pop rbx
     cmp rax, rbx
-setl al
+setle al
 movzx rax, al
 
     cmp rax, 0
-    jz for_end_0
-    ; For loop body
+    jz endif0
+
+    mov rax, [rbp-16]
+    jmp recurs_epilogue
+
+endif0: nop
+
+
     
     
-    mov rax, [rbp-32]
-    mov rbx, rax                     ; rbx holds the index
-    mov rax, [rbp-16]    ; rax holds the base pointer
-    mov rax, [rax + rbx * 8]         ; Access the element (8 bytes for int/pointer)
+    mov rax, 1
+    push rax
+    mov rax, [rbp-16]
+    pop rbx
+    sub rax, rbx
+
+push rax
+pop rdi
+call recurs
 
     push rax
-    mov rax, [rbp-24]
+    mov rax, [rbp-16]
     pop rbx
     add rax, rbx
 
-mov [rbp-24], rax
-    ; For loop increment
-    inc qword [rbp-32]
-    jmp for_loop_0
-for_end_0:
-    nop
+    jmp recurs_epilogue
 
 
-    mov rax, [rbp-24]
-    jmp sum_array_epilogue
-
-
-sum_array_epilogue:
+recurs_epilogue:
     mov rsp, rbp
     pop rbp
     ret
@@ -81,140 +74,81 @@ main:
                        ; Placeholder for initializing main's parameters from argv
     
     
-    ; Allocate memory for array 'my_arr'
-    mov rax, 10
+    ; Allocate memory for array 'tab'
+    mov rax, 6
     mov rdi, rax
     mov rax, 8
     imul rdi, rax
     call malloc
     mov [rbp-8], rax
 
-    ; Initialize my_arr[0]
-    mov rax, 10
+    ; Initialize tab[0]
+    mov rax, 1
     mov rbx, [rbp-8]
     mov [rbx + 0], rax
 
-    ; Initialize my_arr[1]
-    mov rax, 20
+    ; Initialize tab[1]
+    mov rax, 2
     mov rbx, [rbp-8]
     mov [rbx + 8], rax
 
-    ; Initialize my_arr[2]
-    mov rax, 30
+    ; Initialize tab[2]
+    mov rax, 4
     mov rbx, [rbp-8]
     mov [rbx + 16], rax
 
-    ; Initialize my_arr[3]
-    mov rax, 40
+    ; Initialize tab[3]
+    mov rax, 5
     mov rbx, [rbp-8]
     mov [rbx + 24], rax
 
-    ; Initialize my_arr[4]
-    mov rax, 50
+    ; Initialize tab[4]
+    mov rax, 6
     mov rbx, [rbp-8]
     mov [rbx + 32], rax
 
-    ; Initialize my_arr[5]
-    mov rax, 60
+    ; Initialize tab[5]
+    mov rax, 8
     mov rbx, [rbp-8]
     mov [rbx + 40], rax
 
-    ; Initialize my_arr[6]
-    mov rax, 70
-    mov rbx, [rbp-8]
-    mov [rbx + 48], rax
-
-    ; Initialize my_arr[7]
-    mov rax, 80
-    mov rbx, [rbp-8]
-    mov [rbx + 56], rax
-
-    ; Initialize my_arr[8]
-    mov rax, 90
-    mov rbx, [rbp-8]
-    mov [rbx + 64], rax
-
-    ; Initialize my_arr[9]
-    mov rax, 100
-    mov rbx, [rbp-8]
-    mov [rbx + 72], rax
-
-    mov rax, [rbp-8]
-push rax
-pop rdi
-call sum_array
-
-    mov [rbp-16], rax  ; local var total
-
-    
-    mov rax, 500
-    push rax
-    mov rax, [rbp-16]
-    pop rbx
-    cmp rax, rbx
-setg al
-movzx rax, al
-
-    cmp rax, 0
-    jz else1
-
-    mov rax, 1
-    mov rsi, rax
-    mov rdi, fmt_int
-    xor rax, rax
-    call printf
-
-    jmp endif1
-else1:
-
-    mov rax, 0
-    mov rsi, rax
-    mov rdi, fmt_int
-    xor rax, rax
-    call printf
-
-endif1: nop
-
     ; For loop init
     mov rax, 0
-    mov [rbp-24], rax
-for_loop_2:
+    mov [rbp-16], rax
+for_loop_1:
     ; For loop condition
     
-    mov rax, 10
+    mov rax, 5
     push rax
-    mov rax, [rbp-24]
+    mov rax, [rbp-16]
     pop rbx
     cmp rax, rbx
 setl al
 movzx rax, al
 
     cmp rax, 0
-    jz for_end_2
+    jz for_end_1
     ; For loop body
     
     
-    mov rax, [rbp-24]
+    mov rax, [rbp-16]
     mov rbx, rax                     ; rbx holds the index
     mov rax, [rbp-8]    ; rax holds the base pointer
     mov rax, [rax + rbx * 8]         ; Access the element (8 bytes for int/pointer)
 
+    mov [rbp-24], rax  ; local var val
+
+    mov rax, [rbp-24]
     mov rsi, rax
     mov rdi, fmt_int
     xor rax, rax
     call printf
 
     ; For loop increment
-    inc qword [rbp-24]
-    jmp for_loop_2
-for_end_2:
+    inc qword [rbp-16]
+    jmp for_loop_1
+for_end_1:
     nop
-
-    mov rax, [rbp-16]
-    mov rsi, rax
-    mov rdi, fmt_int
-    xor rax, rax
-    call printf
 
     mov rax, 0
     jmp main_epilogue
