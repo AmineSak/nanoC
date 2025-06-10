@@ -4,6 +4,9 @@ extern printf, atoi, malloc
 section .data
     fmt_int:  db "%ld", 10, 0   ; Use %ld for 64-bit integers
     argv_ptr: dq 0
+    argv: dq 0
+    fmt_str: db "%s", 10, 0
+    fmt_char: db "%c",10, 0
 
     DECL_VARS                   ; Placeholder for global variables
 

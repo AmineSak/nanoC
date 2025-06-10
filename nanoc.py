@@ -177,7 +177,15 @@ def asm_expression(e, local_vars):
     if e.data == "opbin":
         if type_expression(e.children[0], env) == "char*" or type_expression(e.children[0], env) == "char":
             if e.children[1].value != "+":
-                raise TypeError("Opération non supportée pour les char* ou char.")
+                left  = asm_expression(e.children[0])
+                right = asm_expression(e.children[1])
+                return f"""{left}
+        push rax
+        {right}
+        mov rsi, rax
+        pop rdi
+        call strcat_custom"""
+                
             type_commande(e, env)
             None
         else:
@@ -426,10 +434,16 @@ endif{idx}: nop
 endif{idx}: nop
 """
     if c.data == "print":
-        return f"""
+        if type_expression(c.children[0], local_vars) == 'char*':
+            fmt = "fmt_str"
+        elif type_expression(c.children[0], local_vars) == 'char':
+            fmt = "fmt_char"
+        else:
+            fmt="fmt_int"
+            return f"""
     {asm_expression(c.children[0], local_vars)}
     mov rsi, rax
-    mov rdi, fmt_int
+    mov rdi, {fmt}
     xor rax, rax
     call printf
 """
