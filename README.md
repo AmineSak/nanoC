@@ -224,32 +224,27 @@ for (int i = 0; i < 10; i++) {
 }
 ```
 
-Cette structure est reconnue par la grammaire et génère du code assembleur avec des sauts conditionnels (`jz`, `jmp`) pour répéter l’exécution d’un bloc. Pour l'instant, l’incrémentation `i++` est la seule opération supportée sur la variable de la boucle.
+Cette structure est reconnue par la grammaire et génère du code assembleur avec des sauts conditionnels (`jz`, `jmp`) pour répéter l’exécution d’un bloc. Pour l'instant, l’incrémentation `i++` est la seule opération supportée sur la variable de la boucle. D'autres opérations peuvent être implémentées en suivant la même logique.
 
-### 4. Génération de code assembleur
+### 4. Exemple de code complet avec toutes les fonctionnalités des tableaux (Ne pas oublier de supprimer les commentaires du code ci-dessous avant de le tester): 
 
-Le compilateur génère du code assembleur x86-64 à partir de l’AST. Pour les tableaux :
+```
+main(x) {
+    int[5] t1 = {10, 20, 30, 40, 50};     // Déclaration + initialisation
+    int[5] t2;                            // Déclaration seule
 
-- L’adresse mémoire du tableau est stockée dans une variable (ex : `tab: dq 0`).
-- Chaque accès effectue un calcul d’adresse en décalant l’index de 3 bits (`shl rcx, 3`), ce qui équivaut à une multiplication par 8 pour obtenir un offset en octets.
-- L’initialisation avec des valeurs stocke chaque valeur dans la bonne case mémoire après l'allocation.
+    int i = 0;                            // Variable pour boucle
+    int s = 0;                            // Somme
 
-Exemple de code assembleur généré pour l'initialisation `int[3] tab = {1, 2, 3};` :
+    for (int i = 0; i < 5; i++) {        // Parcours du tableau t1
+        t2[i] = t1[i];                   // Affectation élément par élément
+        s = s + t2[i];                   // Utilisation dans une expression
+    }
 
-```nasm
-; Allouer 3 * 8 = 24 octets
-mov rdi, 3
-shl rdi, 3
-call malloc
-mov [tab_pointer], rax ; Stocke l'adresse retournée par malloc
-
-; Initialiser les valeurs
-mov rbx, [tab_pointer] ; Charge l'adresse de base du tableau
-mov rax, 1
-mov [rbx + 0], rax ; tab[0] = 1
-mov rax, 2
-mov [rbx + 8], rax ; tab[1] = 2
-mov rax, 3
-mov [rbx + 16], rax ; tab[2] = 3
+    printf(s);                           // Affiche la somme des éléments de t2
+    return(s)
+}!
 ```
 
+### 5. Limites:
+* Nous n'avons pas encore pu créer de tableaux de caractères et de chaînes de caractères à cause de problèmes liés à l'intégration de ces types avec le reste du projet.
