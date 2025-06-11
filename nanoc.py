@@ -714,7 +714,7 @@ def pp_program(p):
 
 
 if __name__ == "__main__":
-    with open("test1.c") as f:
+    with open("test.c") as f:
         src = f.read()
     ast = g.parse(src)
     print(ast)
