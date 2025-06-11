@@ -199,7 +199,7 @@ Cette structure est reconnue par la grammaire et génère du code assembleur ave
 ### 4. Exemple de code complet avec toutes les fonctionnalités des tableaux (Ne pas oublier de supprimer les commentaires du code ci-dessous avant de le tester): 
 
 ```
-main(x) {
+int main(int x) {
     int[5] t1 = {10, 20, 30, 40, 50};     // Déclaration + initialisation
     int[5] t2;                            // Déclaration seule
 
@@ -212,8 +212,8 @@ main(x) {
     }
 
     printf(s);                           // Affiche la somme des éléments de t2
-    return(s)
-}!
+    return(s);
+}
 ```
 
 ### 5. Limites:
