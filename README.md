@@ -4,6 +4,7 @@
 
 Ce document fournit une description détaillée des fonctionnalités et de l'implémentation de notre compilateur, en se concentrant sur le typage statique, les fonctions, les chaînes de caractères et les tableaux.
 Pour tester le compilateur il suffit d'écrire le code à tester dans le fichier test.c et exécuter le script nanoc.py. Le code assembleur sera disponible dans le fichier output.asm.
+La branche d'évaluation sera la branche main.
 
 ## Typage
 
