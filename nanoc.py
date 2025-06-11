@@ -3,6 +3,7 @@ from typage import type_expression, type_commande
 
 # Global state for the compiler
 env = {}  # Symbol table for global variables and functions
+local_vars = {}  # Symbol table for local variables in functions
 cpt = 0  # Counter for generating unique labels
 declared_strings = set()
 declared_chars=set()
@@ -145,12 +146,11 @@ def asm_expression(e, local_vars):
             try:
                 offset = local_vars[var_name]["off"]
                 return f"mov rax, [rbp{offset}]"
-            except:
-                None
-        if var_name in env:
-            return f"mov rax, [{var_name}]"
-        else:
-            raise NameError(f"Variable '{var_name}' not defined.")
+            except:     
+                if var_name in env:
+                    return f"mov rax, [{var_name}]"
+                else:
+                    raise NameError(f"Variable '{var_name}' not defined.")
 
     if e.data == "arr_access":
         name = e.children[0].value
@@ -163,8 +163,8 @@ def asm_expression(e, local_vars):
             except:
                 if name in env:
                     base_addr_location = f"[{name}]"
-        else:
-            raise NameError(f"Array '{name}' not defined.")
+                else:
+                    raise NameError(f"Array '{name}' not defined.")
 
         # Calculate index and access memory
         return f"""
@@ -199,15 +199,15 @@ def asm_expression(e, local_vars):
         for arg in args:
             asm_code += asm_expression(arg, local_vars) + "\n"
             asm_code += "push rax\n"
-        for i in range(len(args)):
+        
+        for i in range(len(args) - 1, -1, -1):
             asm_code += f"pop {arg_registers[i]}\n"
 
-        # Special handling for printf
-        if func_name == "printf":
-            asm_code += "xor rax, rax\n"
+    if func_name == "printf":
+        asm_code += "xor rax, rax\n"
 
-        asm_code += f"call {func_name}\n"
-        return asm_code
+    asm_code += f"call {func_name}\n"
+    return asm_code
 
 
 def asm_commande(c, local_vars, func_name):
@@ -222,7 +222,7 @@ def asm_commande(c, local_vars, func_name):
                 raise TypeError(
                     f"Incompatibilité de type pour la déclaration de '{var_name}'."
                 )
-            offset = -(8 * (1 + len(local_vars)))
+            offset = -(8 * (len(local_vars)))
             local_vars[var_name] = {'off': offset, 'type': var_type}
             exp_asm = asm_expression(c.children[2], local_vars)
             return f"""
@@ -250,7 +250,7 @@ def asm_commande(c, local_vars, func_name):
             raise TypeError("Le nombre d'éléments du tableau doit être un entier.")
         """
         if var_type == "int":
-            size = 32
+            size = 8
         elif var_type == "char*":
             size = 8
             
@@ -268,7 +268,7 @@ def asm_commande(c, local_vars, func_name):
 """
         else:
             # Create a local variable for the *pointer* to the array
-            offset = -(8 * (1 + len(local_vars)))
+            offset = -(8 * (len(local_vars)))
             local_vars[arr_name] = {'off': offset, 'type': var_type}
             type_commande(c, local_vars)
             return f"""
@@ -312,8 +312,8 @@ def asm_commande(c, local_vars, func_name):
 """
             return code            
         else:
-            offset = -(8 * (1 + len(local_vars)))
-            local_vars[arr_name] = {'off': offset, 'type': var_type}
+            offset = -(8 * (len(local_vars)))
+            local_vars[arr_name] = {'off': offset, 'type': f"{var_type}[]"}
             type_commande(c, local_vars)
             code = f"""
     ; Allocate memory for array '{arr_name}'
@@ -343,10 +343,10 @@ def asm_commande(c, local_vars, func_name):
             offset = local_vars[var_name]["off"]
             return f"{exp_asm}\nmov [rbp{offset}], rax"
         elif var_name in env:
-            if var_name not in env:
-                raise NameError(f"Variable '{var_name}' not defined.")
             exp_asm = asm_expression(c.children[1], env)
             return f"{exp_asm}\nmov [{var_name}], rax"
+        else:
+            raise NameError(f"Variable '{var_name}' not defined.")
             
 
     if c.data == "arr_affectation":
@@ -390,6 +390,10 @@ def asm_commande(c, local_vars, func_name):
     if c.data == "return_statement":
         if func_name != 'main':
             exp_asm = asm_expression(c.children[0], local_vars)
+            print(env[func_name]["return_type"])
+            print(type_expression(c.children[0], local_vars))
+            print(c)
+            print(local_vars)
             if env[func_name]["return_type"] != type_expression(c.children[0], local_vars):
                 raise TypeError(
                     f"Type de retour incorrect pour '{func_name}': attendu {env[func_name]['return_type']}, obtenu {type_expression(c.children[0], local_vars)}."
@@ -413,7 +417,7 @@ def asm_commande(c, local_vars, func_name):
         init_expr = c.children[2]
         cond_expr = c.children[3]
         body_block = c.children[5]
-        offset = -(8 * (1 + len(local_vars)))
+        offset = -(8 * (len(local_vars)))
         local_vars[loop_var] = {'off': offset, 'type': 'int'}
         body_asm = ""
         for cmd in body_block.children:
@@ -535,12 +539,12 @@ def asm_function(f):
         if param_decl.data == "array_decl_type":
             env[func_name]["params"].append(f"{param_type}[]")
             local_vars[func_name]["params"].append(f"{param_type}[]")
-            offset = -(8 * (1 + len(local_vars)))
+            offset = -(8 * (len(local_vars)))
             local_vars[param_name] = {'off': offset, 'type': f"{param_type}[]"}
         else:
             env[func_name]["params"].append(param_type)
             local_vars[func_name]["params"].append(param_type)
-            offset = -(8 * (1 + len(local_vars)))
+            offset = -(8 * (len(local_vars)))
             local_vars[param_name] = {'off': offset, 'type': param_type}
         asm_code += (
             f"    mov [rbp{offset}], {arg_registers[i]} ; Save param '{param_name}'\n"
@@ -569,29 +573,18 @@ def asm_program(p):
     main_params = main_node.children[1].children
     main_block = main_node.children[2]
     decl_vars = ""
-    init_vars = ""
-    """
-    for i, param in enumerate(main_params):
-        var_name = param.children[1].value
-        var_type = param.children[0].value
-        env[var_name] = {"type": var_type}  #{"type": "global_var"}"""
+    init_vars = ""  
     main_local_vars = {}
     main_commande_asm = ""
     env["main"] = {"type": "function", 'params': [], 'return_type': main_node.children[0].value}
     for cmd in main_block.children:
         main_commande_asm += asm_commande(cmd, env, "main")
         #type_commande(cmd, env)
-    print(env)
     for i,var_name in enumerate(env):
-        if env[var_name]["type"] != "function":
-            env[var_name] = {"type": "global_var"}
+        # Exclure explicitement les noms de fonctions
+        if (env[var_name].get("type") != "function" and 
+            var_name not in ["main", "sum_array", "fib"]):
             decl_vars += f"{var_name}: dq 0\n"
-            init_vars += f"""
-    mov rdi, [argv_ptr]
-    mov rdi, [rdi + {(i+1)*8}]
-    call atoi
-    mov [{var_name}], rax
-"""
     with open("moule.asm") as f:
         prog_asm = f.read()
 

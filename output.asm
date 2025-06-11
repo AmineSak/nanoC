@@ -25,27 +25,7 @@ main:
     ; Save command line arguments pointer
     mov [argv_ptr], rsi
 
-    
-    mov rdi, [argv_ptr]
-    mov rdi, [rdi + 16]
-    call atoi
-    mov [t1], rax
-
-    mov rdi, [argv_ptr]
-    mov rdi, [rdi + 24]
-    call atoi
-    mov [t2], rax
-
-    mov rdi, [argv_ptr]
-    mov rdi, [rdi + 32]
-    call atoi
-    mov [s], rax
-
-    mov rdi, [argv_ptr]
-    mov rdi, [rdi + 40]
-    call atoi
-    mov [i], rax
-                   ; Placeholder for initializing main's parameters from argv
+                       ; Placeholder for initializing main's parameters from argv
     
     
     ; Allocate memory for array 't1'
@@ -84,7 +64,7 @@ main:
     ; Allocate memory for array 't2'
     mov rax, 5
     mov rdi, rax             ; Number of elements
-    mov rax, 32          ; Size of each element (int or pointer)
+    mov rax, 8          ; Size of each element (int or pointer)
     imul rdi, rax            ; Total bytes
     call malloc
     mov [t2], rax    ; Store pointer in local variable 't2'
@@ -94,13 +74,13 @@ main:
 
     ; For loop init
     mov rax, 0
-    mov [rbp-40], rax
+    mov [rbp-32], rax
 for_loop_0:
     ; For loop condition
     
     mov rax, 5
     push rax
-    mov rax, [rbp-40]
+    mov rax, [rbp-32]
     pop rbx
     cmp rax, rbx
 setl al
@@ -111,20 +91,20 @@ movzx rax, al
     ; For loop body
     
     
-    mov rax, [rbp-40]
+    mov rax, [rbp-32]
     mov rbx, rax                     ; rbx holds the index
     mov rax, [t1]    ; rax holds the base pointer
     mov rax, [rax + rbx * 8]         ; Access the element (8 bytes for int/pointer)
 
     push rax
-    mov rax, [rbp-40]
+    mov rax, [rbp-32]
     mov rbx, rax
     pop rax
     mov rcx, [t2]
     mov [rcx + rbx * 8], rax
 
     
-    mov rax, [rbp-40]
+    mov rax, [rbp-32]
     mov rbx, rax                     ; rbx holds the index
     mov rax, [t2]    ; rax holds the base pointer
     mov rax, [rax + rbx * 8]         ; Access the element (8 bytes for int/pointer)
@@ -136,7 +116,7 @@ movzx rax, al
 
 mov [s], rax
     ; For loop increment
-    inc qword [rbp-40]
+    inc qword [rbp-32]
     jmp for_loop_0
 for_end_0:
     nop

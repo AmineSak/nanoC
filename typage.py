@@ -85,7 +85,7 @@ def type_commande(c, env):
     elif c.data == "array_declaration_init":
         var_type = c.children[0].value
         var_name = c.children[2].value
-        for i in range(3, len(c.children)):
+        for i in range(len(c.children[3].children)):
             if c.children[3].children[i].children[0].type == "NUMBER" and var_type != "int":
                 raise TypeError(f"Incompatibilité de type pour la déclaration de '{var_name}'.")
         if int(c.children[1].children[0]) != len(c.children[3].children):
