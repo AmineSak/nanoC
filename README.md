@@ -169,7 +169,7 @@ main() {
 }
 ```
 
-Le compilateur est implémenté dans charCode.py ; ce script traduit le langage source en assembleur en s’appuyant sur le gabarit char_moule.asm, puis le code généré est appelé depuis la fonction main de char_main.c pour produire l’exécutable final.
+Le compilateur est implémenté dans `charCode.py` ; ce script traduit le langage source en assembleur en s’appuyant sur le gabarit `char_moule.asm`, puis le code généré est appelé depuis la fonction main de `char_main.c` pour produire l’exécutable final.
 Nous n’avons pas encore relié le type char aux fonctions ni aux tableaux : associer correctement le typage, la gestion d’adressage (char*), la pile d’appels et les offsets des arguments s’est révélé nettement plus ardu que prévu. En l’état, la logique qui pilote déjà les caractères simples et les chaînes devenait trop complexe pour rester cohérente avec le reste du projet ; nous avons donc choisi de stabiliser d’abord les opérations élémentaires (char, char*, concaténation, indexation) avant d’étendre le support aux paramètres de fonction et aux listes.
 
 ---
