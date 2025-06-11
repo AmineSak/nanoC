@@ -144,36 +144,6 @@ int factorial(int n) {
 
 ---
 
-## Les `char ` et `char *`
-
-Le programme-test si dessous illustre, en quelques lignes, l’ensemble des primitives que notre compilateur sait déjà transformer en assembleur : déclaration et affectation de caractères (char C = 'A') ; création d’une chaîne littérale et d’un pointeur vers celle-ci (char *S = "960BNK"), puis extraction d’un caractère individuel par indexation (t = S[3], soit le 'B' de « 960BNK ») ; concaténation de chaînes avec l’opérateur + (a = S + S, donnant « 960BNK960BNK ») ; appel des fonctions intégrées len (longueur = 6) et atoi (conversion ASCII→entier, donnant 960). Enfin, six appels successifs à printf démontrent la gestion automatique des formats : impression d’un caractère, d’une chaîne, d’un caractère extrait, d’une chaîne résultant d’une concaténation, puis d’un entier produit par len et d’un entier produit par atoi. 
-
-```c
-main() {
-    char C = 'A';
-    char *S="960BNK";
-    char t;
-    t = S[3];
-    a= S+S;
-    L=len(S);
-    K=atoi(S);
-
-    
-    printf(C);
-    printf(S);
-    printf(t);
-    printf(a);
-    printf(L);
-    printf(K)
-    
-}
-```
-
-Le compilateur est implémenté dans `charCode.py` ; ce script traduit le langage source en assembleur en s’appuyant sur le gabarit `char_moule.asm`, puis le code généré est appelé depuis la fonction main de `char_main.c` pour produire l’exécutable final.
-Nous n’avons pas encore relié le type char aux fonctions ni aux tableaux : associer correctement le typage, la gestion d’adressage (char*), la pile d’appels et les offsets des arguments s’est révélé nettement plus ardu que prévu. En l’état, la logique qui pilote déjà les caractères simples et les chaînes devenait trop complexe pour rester cohérente avec le reste du projet ; nous avons donc choisi de stabiliser d’abord les opérations élémentaires (char, char*, concaténation, indexation) avant d’étendre le support aux paramètres de fonction et aux listes.
-
----
-
 ## Les Tableaux
 
 ### 1. Déclaration des tableaux
@@ -248,3 +218,34 @@ main(x) {
 
 ### 5. Limites:
 * Nous n'avons pas encore pu créer de tableaux de caractères et de chaînes de caractères à cause de problèmes liés à l'intégration de ces types avec le reste du projet.
+
+## Les `char ` et `char *`
+
+Le programme-test si dessous illustre, en quelques lignes, l’ensemble des primitives que notre compilateur sait déjà transformer en assembleur : déclaration et affectation de caractères (char C = 'A') ; création d’une chaîne littérale et d’un pointeur vers celle-ci (char *S = "960BNK"), puis extraction d’un caractère individuel par indexation (t = S[3], soit le 'B' de « 960BNK ») ; concaténation de chaînes avec l’opérateur + (a = S + S, donnant « 960BNK960BNK ») ; appel des fonctions intégrées len (longueur = 6) et atoi (conversion ASCII→entier, donnant 960). Enfin, six appels successifs à printf démontrent la gestion automatique des formats : impression d’un caractère, d’une chaîne, d’un caractère extrait, d’une chaîne résultant d’une concaténation, puis d’un entier produit par len et d’un entier produit par atoi. 
+
+```c
+main() {
+    char C = 'A';
+    char *S="960BNK";
+    char t;
+    t = S[3];
+    a= S+S;
+    L=len(S);
+    K=atoi(S);
+
+    
+    printf(C);
+    printf(S);
+    printf(t);
+    printf(a);
+    printf(L);
+    printf(K)
+    
+}
+```
+
+Le compilateur est implémenté dans `charCode.py` ; ce script traduit le langage source en assembleur en s’appuyant sur le gabarit `char_moule.asm`, puis le code généré est appelé depuis la fonction main de `char_main.c` pour produire l’exécutable final.
+Nous n’avons pas encore relié le type char aux fonctions ni aux tableaux : associer correctement le typage, la gestion d’adressage (char*), la pile d’appels et les offsets des arguments s’est révélé nettement plus ardu que prévu. En l’état, la logique qui pilote déjà les caractères simples et les chaînes devenait trop complexe pour rester cohérente avec le reste du projet ; nous avons donc choisi de stabiliser d’abord les opérations élémentaires (char, char*, concaténation, indexation) avant d’étendre le support aux paramètres de fonction et aux listes.
+
+---
+
