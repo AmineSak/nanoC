@@ -33,9 +33,9 @@ def type_expression(e, env):
             var_name = e.children[0].value
             if var_name not in env:
                 raise TypeError(f"Variable '{var_name}' non déclarée.")
-            if env[var_name] not in ("int[]", "char*[]"):
+            if env[var_name]['type'] not in ("int[]", "char*[]"):
                 raise TypeError(f"'{var_name}' n'est pas un tableau.")
-            return env[var_name]['type']
+            return env[var_name]['type'][0:-2]
         if e.data == "opbin":
             left_type = type_expression(e.children[0], env)
             right_type = type_expression(e.children[2], env)
@@ -58,7 +58,6 @@ def type_expression(e, env):
         if e.data == 'array_decl_type':
             return f"{e.children[0].value}[]"
         if e.data == "return_statement":
-            print(e.children[0])
             exp_type = type_expression(e.children[0], env)
             if exp_type != env['return_type']:
                 raise TypeError(f"Type de retour incorrect : attendu {env['return_type']}, obtenu {exp_type}.")
@@ -86,7 +85,7 @@ def type_commande(c, env):
     elif c.data == "array_declaration_init":
         var_type = c.children[0].value
         var_name = c.children[2].value
-        for i in range(3, len(c.children)):
+        for i in range(len(c.children[3].children)):
             if c.children[3].children[i].children[0].type == "NUMBER" and var_type != "int":
                 raise TypeError(f"Incompatibilité de type pour la déclaration de '{var_name}'.")
         if int(c.children[1].children[0]) != len(c.children[3].children):
